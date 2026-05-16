@@ -26,7 +26,7 @@ import logoLight from "@/assets/primewave-light.png";
 import logoDark from "@/assets/primewave-dark.png";
 
 export function AppSidebar() {
-  const { t, theme, logout } = useApp();
+  const { t, theme, logout, lang } = useApp();
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   const items = [
@@ -40,7 +40,7 @@ export function AppSidebar() {
   ];
 
   return (
-    <Sidebar collapsible="icon">
+    <Sidebar collapsible="icon" side={lang === "ar" ? "right" : "left"}>
       <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
         <Link to="/dashboard" className="flex items-center gap-2">
           <img
