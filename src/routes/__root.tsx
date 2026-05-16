@@ -9,6 +9,8 @@ import {
 } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
+import { AppProvider } from "@/components/AppProvider";
+import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
   return (
@@ -72,11 +74,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "Primewave Mate Clinics — Scheduling & LIVE AI Agent" },
+      { name: "description", content: "Bilingual scheduling system and LIVE AI Agent for clinics and health providers." },
+      { name: "author", content: "Primewave" },
+      { property: "og:title", content: "Primewave Mate Clinics" },
+      { property: "og:description", content: "Scheduling & LIVE AI Agent for clinics and health providers." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
@@ -113,7 +115,10 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      <AppProvider>
+        <Outlet />
+        <Toaster richColors position="top-right" />
+      </AppProvider>
     </QueryClientProvider>
   );
 }
