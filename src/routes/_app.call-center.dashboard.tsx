@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useApp } from "@/lib/i18n";
 import {
-  consumeMutation, useLiveAgentStore,
+  useLiveAgentStore,
   type LiveCall,
 } from "@/lib/liveAgentStore";
 import {
@@ -63,94 +63,10 @@ function DashboardPage() {
   const activeCall = activeCallList[0] ?? null;
   const wsConnected = live.wsConnected;
 
-  // Snapshot push moved to _app.tsx so the agent always has fresh data,
-  // even when the user is on a non-Dashboard page when a call lands.
-
-  // When the backend agent creates a patient / appointment via a tool call
-  // it broadcasts a tool_mutation event. Mirror those records into the
-  // SPA's localStorage so the Patients + Appointments + Calendar pages
-  // show what the agent did, AND drop an entry into the SPA's existing
-  // agent_activity feed so the per-row delete-with-cascade keeps working.
-  //
-  // Uses functional updaters everywhere so multiple mutations in the same
-  // useEffect tick see each other's results (prior versions of this code
-  // used stale closures and silently dropped the appointment update when
-  // a patient_created event arrived first).
-  useEffect(() => {
-    for (const ev of live.recentMutations) {
-      if (ev.kind === "patient_created" && ev.patient) {
-        setPatients((prev) =>
-          prev.some((p) => p.id === ev.patient.id) ? prev : [...prev, ev.patient],
-        );
-        setActivity((prev) => [{
-          id:             nextId("LAE", prev),
-          ts:             new Date().toISOString(),
-          call_id:        ev.call_id,
-          caller_name:    ev.patient.name || "Unknown",
-          caller_phone:   ev.patient.phone || "",
-          action:         "create_patient",
-          summary:        `Created new patient ${ev.patient.name} (file ${ev.patient.file_number})`,
-          summary_ar:     `أنشأ مريضاً جديداً ${ev.patient.name_ar || ev.patient.name} (الملف ${ev.patient.file_number})`,
-          patient_id:     ev.patient.id,
-          appointment_id: null,
-        }, ...prev]);
-      } else if (ev.kind === "appointment_created" && ev.appointment) {
-        const apt = ev.appointment;
-        setAppointments((prev) =>
-          prev.some((a) => a.id === apt.id) ? prev : [...prev, apt],
-        );
-        setActivity((prev) => [{
-          id:             nextId("LAE", prev),
-          ts:             new Date().toISOString(),
-          call_id:        ev.call_id,
-          caller_name:    apt.patient_name || "Unknown",
-          caller_phone:   apt.patient_phone || "",
-          action:         "create_appointment",
-          summary:        `Booked appointment ${apt.id} at ${apt.scheduled_at?.slice(0, 16).replace("T", " ")}`,
-          summary_ar:     `حجز موعد ${apt.id} في ${apt.scheduled_at?.slice(0, 16).replace("T", " ")}`,
-          patient_id:     null,
-          appointment_id: apt.id,
-        }, ...prev]);
-      } else if (ev.kind === "appointment_cancelled" && ev.appointment) {
-        const apt = ev.appointment;
-        setAppointments((prev) =>
-          prev.map((a) => (a.id === apt.id ? { ...a, ...apt } : a)),
-        );
-        setActivity((prev) => [{
-          id:             nextId("LAE", prev),
-          ts:             new Date().toISOString(),
-          call_id:        ev.call_id,
-          caller_name:    apt.patient_name || "Unknown",
-          caller_phone:   apt.patient_phone || "",
-          action:         "cancel_appointment",
-          summary:        `Cancelled appointment ${apt.id} (was ${apt.scheduled_at?.slice(0, 16).replace("T", " ")})`,
-          summary_ar:     `ألغى الموعد ${apt.id} (كان ${apt.scheduled_at?.slice(0, 16).replace("T", " ")})`,
-          patient_id:     null,
-          appointment_id: apt.id,
-        }, ...prev]);
-      } else if (ev.kind === "appointment_rescheduled" && ev.appointment) {
-        const apt = ev.appointment;
-        const prevAt = (ev as any).previous_scheduled_at as string | undefined;
-        setAppointments((prev) =>
-          prev.map((a) => (a.id === apt.id ? { ...a, ...apt } : a)),
-        );
-        setActivity((prev) => [{
-          id:             nextId("LAE", prev),
-          ts:             new Date().toISOString(),
-          call_id:        ev.call_id,
-          caller_name:    apt.patient_name || "Unknown",
-          caller_phone:   apt.patient_phone || "",
-          action:         "reschedule_appointment",
-          summary:        `Rescheduled ${apt.id}: ${prevAt?.slice(0, 16).replace("T", " ") ?? "?"} → ${apt.scheduled_at?.slice(0, 16).replace("T", " ")}`,
-          summary_ar:     `أعاد جدولة ${apt.id}: ${prevAt?.slice(0, 16).replace("T", " ") ?? "؟"} → ${apt.scheduled_at?.slice(0, 16).replace("T", " ")}`,
-          patient_id:     null,
-          appointment_id: apt.id,
-        }, ...prev]);
-      }
-      consumeMutation(ev);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live.recentMutations]);
+  // Snapshot push + tool_mutation drain both moved to _app.tsx so the
+  // SPA's localStorage stays in sync with the agent's writes regardless
+  // of which page the user is viewing during a call. Dashboard just
+  // READS the same useDemoCollection state here.
 
   // ----- delete cascade --------------------------------------------------
   const [deletingEntry, setDeletingEntry] = useState<AgentActivity | null>(null);
