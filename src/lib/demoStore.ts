@@ -426,9 +426,8 @@ export function getSeedAppointments(): Appointment[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const depIds = SEED_DEPARTMENTS.map((d) => d.id);
-  // Build a quick map: department.id → list of provider IDs that match
-  // its specialty (so an appointment's provider is plausibly in that dept).
+  // Provider routing — appointments prefer a doctor whose specialty matches
+  // the clinic's specialty; falls back to any doctor.
   const providersBySpecialty: Record<string, string[]> = {};
   for (const p of SEED_PROVIDERS) {
     if (!providersBySpecialty[p.specialty]) providersBySpecialty[p.specialty] = [];
@@ -436,70 +435,105 @@ export function getSeedAppointments(): Appointment[] {
   }
   const fallbackDoctors = SEED_PROVIDERS.filter((p) => p.role === "doctor").map((p) => p.id);
 
+  /** Window centred on today where each clinic-day fills almost every slot
+   * (leaving only 2-3 free). Outside this window the volume drops back
+   * down to a handful of appointments per clinic-day so historical scroll
+   * stays usable. */
+  const FOCAL_RADIUS = 7;
+  const FREE_SLOTS_MIN = 2;
+  const FREE_SLOTS_MAX = 3;
+
   let serial = 0;
   for (let dayOffset = -20; dayOffset <= 10; dayOffset++) {
     const day = new Date(today);
     day.setDate(today.getDate() + dayOffset);
-    const key = ymd(day);
-    const rng = mulberry32(dateKeyToSeed(key));
-    // 3–8 appointments per day, weighted slightly higher mid-week.
-    const dow = day.getDay();
-    const baseCount = 4 + Math.floor(rng() * 4);
-    const count = dow === 0 || dow === 6 ? Math.max(2, baseCount - 2) : baseCount;
+    const dateKey = ymd(day);
+    const dayRng = mulberry32(dateKeyToSeed(dateKey));
+    const inFocal = Math.abs(dayOffset) <= FOCAL_RADIUS;
 
-    for (let i = 0; i < count; i++) {
-      serial++;
-      const departmentId = depIds[Math.floor(rng() * depIds.length)];
-      const department = SEED_DEPARTMENTS.find((d) => d.id === departmentId)!;
+    for (const department of SEED_DEPARTMENTS) {
+      // Per-clinic per-day RNG, deterministic across reloads.
+      const rng = mulberry32(dateKeyToSeed(dateKey + ":" + department.id));
+      // Ride the day-level rng once to keep some date-only randomness.
+      dayRng();
+
+      const dayHours = (department.working_hours ?? DEFAULT_WORKING_HOURS)[day.getDay()];
+      if (!dayHours.open) continue;
+      const allSlots = slotsForDay(dayHours).filter((s) => !isBreakSlot(s, dayHours));
+      if (allSlots.length === 0) continue;
+
+      // Decide which slots to fill.
       const candidates = providersBySpecialty[department.specialty] ?? fallbackDoctors;
-      const providerId = candidates[Math.floor(rng() * candidates.length)] ?? fallbackDoctors[0];
+      let slotsToFill: string[];
+      if (inFocal) {
+        // Pick 2-3 to leave FREE, then fill everything else.
+        const freeCount = Math.min(
+          allSlots.length,
+          FREE_SLOTS_MIN + Math.floor(rng() * (FREE_SLOTS_MAX - FREE_SLOTS_MIN + 1)),
+        );
+        const freeIdx = new Set<number>();
+        while (freeIdx.size < freeCount) {
+          freeIdx.add(Math.floor(rng() * allSlots.length));
+        }
+        slotsToFill = allSlots.filter((_, i) => !freeIdx.has(i));
+      } else {
+        // Sparse: 1-3 slots filled, the rest free.
+        const fillCount = 1 + Math.floor(rng() * 3);
+        const fillIdx = new Set<number>();
+        while (fillIdx.size < Math.min(fillCount, allSlots.length)) {
+          fillIdx.add(Math.floor(rng() * allSlots.length));
+        }
+        slotsToFill = allSlots.filter((_, i) => fillIdx.has(i));
+      }
 
-      // Spread across business hours 09:00–17:00.
-      const hour = 9 + Math.floor(rng() * 8);
-      const minute = Math.floor(rng() * 4) * 15;
-      const scheduled = new Date(day);
-      scheduled.setHours(hour, minute, 0, 0);
+      for (const slot of slotsToFill) {
+        serial++;
+        const [hh, mm] = slot.split(":").map((n) => parseInt(n, 10));
+        const scheduled = new Date(day);
+        scheduled.setHours(hh, mm, 0, 0);
 
-      let status: AppointmentStatus;
-      if (dayOffset < 0) {
-        // Past: mostly completed, some cancellations / no-shows.
-        const r = rng();
-        if (r < 0.75) status = "completed";
-        else if (r < 0.9) status = "cancelled";
-        else status = "no_show";
-      } else if (dayOffset === 0) {
-        // Today: split by clock time vs now.
-        const now = new Date();
-        if (scheduled.getTime() < now.getTime() - 15 * 60 * 1000) {
-          status = rng() < 0.85 ? "completed" : "no_show";
+        let status: AppointmentStatus;
+        if (dayOffset < 0) {
+          const r = rng();
+          if (r < 0.85) status = "completed";
+          else if (r < 0.95) status = "cancelled";
+          else status = "no_show";
+        } else if (dayOffset === 0) {
+          // Today: split by clock time vs now (with a 15-min grace).
+          if (scheduled.getTime() < Date.now() - 15 * 60 * 1000) {
+            status = rng() < 0.85 ? "completed" : "no_show";
+          } else {
+            status = "scheduled";
+          }
         } else {
           status = "scheduled";
         }
-      } else {
-        status = "scheduled";
+
+        const providerId =
+          candidates[Math.floor(rng() * candidates.length)]
+            ?? fallbackDoctors[0];
+        const patient = SEED_PATIENTS[Math.floor(rng() * SEED_PATIENTS.length)];
+
+        items.push({
+          id: `APT-${String(serial).padStart(4, "0")}`,
+          patient_id: patient.id,
+          patient_name: patient.name,
+          patient_name_ar: patient.name_ar,
+          patient_phone: patient.phone,
+          department_id: department.id,
+          provider_id: providerId,
+          scheduled_at: scheduled.toISOString(),
+          // Single-slot appointments — clean 1:1 with the 30-min grid so the
+          // "free slots" count stays exact in the picker.
+          duration_min: SLOT_MINUTES,
+          status,
+          notes: "",
+        });
       }
-
-      // Pick a patient from the seed pool so appointments carry both
-      // bilingual names and consistent phone numbers.
-      const patient = SEED_PATIENTS[Math.floor(rng() * SEED_PATIENTS.length)];
-
-      items.push({
-        id: `APT-${String(serial).padStart(4, "0")}`,
-        patient_id: patient.id,
-        patient_name: patient.name,
-        patient_name_ar: patient.name_ar,
-        patient_phone: patient.phone,
-        department_id: departmentId,
-        provider_id: providerId,
-        scheduled_at: scheduled.toISOString(),
-        duration_min: [15, 20, 30, 30, 45, 60][Math.floor(rng() * 6)],
-        status,
-        notes: "",
-      });
     }
   }
 
-  // Newest first within the window, then by time of day for stable sorting.
+  // Sort by time of day → newest at the top of the table's default Today view.
   items.sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
   return items;
 }
