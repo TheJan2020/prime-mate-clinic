@@ -54,7 +54,12 @@ export function useDemoCollection<T>(
   seed: T[] | (() => T[]),
 ): {
   items: T[];
-  setAll: (next: T[]) => void;
+  /** Accepts either a fresh array OR a functional updater (prev => next).
+   * The functional form is required when batching multiple writes that
+   * each need to see the previous's result — without it, two setAll
+   * calls in the same render use stale closure values and the second
+   * overwrites the first. */
+  setAll: (next: T[] | ((prev: T[]) => T[])) => void;
   reset: () => void;
 } {
   const [items, setItems] = useState<T[]>(() => {
@@ -86,9 +91,14 @@ export function useDemoCollection<T>(
   }, [key]);
 
   const setAll = useCallback(
-    (next: T[]) => {
-      setItems(next);
-      saveToStorage(key, next);
+    (nextOrFn: T[] | ((prev: T[]) => T[])) => {
+      setItems((prev) => {
+        const next = typeof nextOrFn === "function"
+          ? (nextOrFn as (p: T[]) => T[])(prev)
+          : nextOrFn;
+        saveToStorage(key, next);
+        return next;
+      });
     },
     [key],
   );

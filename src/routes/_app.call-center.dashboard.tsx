@@ -62,37 +62,27 @@ function DashboardPage() {
   const activeCall = activeCallList[0] ?? null;
   const wsConnected = live.wsConnected;
 
-  // Push the SPA's current state to the backend so the agent's function
-  // tools (lookup_patient_by_*, list_free_slots, etc.) have live data.
-  // Runs on mount + whenever any of the SPA-side collections change.
-  useEffect(() => {
-    const snapshot = {
-      patients,
-      appointments,
-      clinics,
-      providers,
-      slot_overrides: overrides,
-    };
-    fetch("/api/demo/clinic/data/snapshot", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(snapshot),
-    }).catch(() => {
-      // Backend may be down or restarting — non-fatal; next mutation retries.
-    });
-  }, [patients, appointments, clinics, providers, overrides]);
+  // Snapshot push moved to _app.tsx so the agent always has fresh data,
+  // even when the user is on a non-Dashboard page when a call lands.
 
   // When the backend agent creates a patient / appointment via a tool call
   // it broadcasts a tool_mutation event. Mirror those records into the
-  // SPA's localStorage so the Patients + Appointments pages show what the
-  // agent did, AND drop an entry into the SPA's existing agent_activity
-  // feed so the per-row delete-with-cascade button keeps working.
+  // SPA's localStorage so the Patients + Appointments + Calendar pages
+  // show what the agent did, AND drop an entry into the SPA's existing
+  // agent_activity feed so the per-row delete-with-cascade keeps working.
+  //
+  // Uses functional updaters everywhere so multiple mutations in the same
+  // useEffect tick see each other's results (prior versions of this code
+  // used stale closures and silently dropped the appointment update when
+  // a patient_created event arrived first).
   useEffect(() => {
     for (const ev of live.recentMutations) {
-      if (ev.kind === "patient_created" && ev.patient && !patients.some((p) => p.id === ev.patient.id)) {
-        setPatients([...patients, ev.patient]);
-        setActivity([{
-          id:             nextId("LAE", activity),
+      if (ev.kind === "patient_created" && ev.patient) {
+        setPatients((prev) =>
+          prev.some((p) => p.id === ev.patient.id) ? prev : [...prev, ev.patient],
+        );
+        setActivity((prev) => [{
+          id:             nextId("LAE", prev),
           ts:             new Date().toISOString(),
           call_id:        ev.call_id,
           caller_name:    ev.patient.name || "Unknown",
@@ -102,13 +92,14 @@ function DashboardPage() {
           summary_ar:     `أنشأ مريضاً جديداً ${ev.patient.name_ar || ev.patient.name} (الملف ${ev.patient.file_number})`,
           patient_id:     ev.patient.id,
           appointment_id: null,
-        }, ...activity]);
-        consumeMutation(ev);
-      } else if (ev.kind === "appointment_created" && ev.appointment && !appointments.some((a) => a.id === ev.appointment.id)) {
-        setAppointments([...appointments, ev.appointment]);
+        }, ...prev]);
+      } else if (ev.kind === "appointment_created" && ev.appointment) {
         const apt = ev.appointment;
-        setActivity([{
-          id:             nextId("LAE", activity),
+        setAppointments((prev) =>
+          prev.some((a) => a.id === apt.id) ? prev : [...prev, apt],
+        );
+        setActivity((prev) => [{
+          id:             nextId("LAE", prev),
           ts:             new Date().toISOString(),
           call_id:        ev.call_id,
           caller_name:    apt.patient_name || "Unknown",
@@ -118,12 +109,9 @@ function DashboardPage() {
           summary_ar:     `حجز موعد ${apt.id} في ${apt.scheduled_at?.slice(0, 16).replace("T", " ")}`,
           patient_id:     null,
           appointment_id: apt.id,
-        }, ...activity]);
-        consumeMutation(ev);
-      } else {
-        // Already applied (or unknown kind) — drain so we don't reprocess.
-        consumeMutation(ev);
+        }, ...prev]);
       }
+      consumeMutation(ev);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live.recentMutations]);
