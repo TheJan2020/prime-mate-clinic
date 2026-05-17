@@ -167,6 +167,37 @@ export type ClinicSlotOverride = {
 
 export const SEED_SLOT_OVERRIDES: ClinicSlotOverride[] = [];
 
+// ----- Live Agent activity --------------------------------------------------
+// Audit trail of everything the Live Agent did during calls — new patients
+// created, appointments booked / cancelled / rescheduled, etc. Surfaces on
+// the Call Center → Dashboard page. Each row that *creates* a record
+// (patient or appointment) carries the new record's id so we can cascade
+// the deletion when the user removes the log entry.
+
+export type AgentActionKind =
+  | "create_patient"
+  | "create_appointment"
+  | "cancel_appointment"
+  | "reschedule_appointment";
+
+export type AgentActivity = {
+  id: string;
+  ts: string;          // ISO datetime
+  call_id: string;     // e.g. "CALL-2024-05-17-001"
+  caller_name: string;
+  caller_phone: string;
+  action: AgentActionKind;
+  summary: string;
+  summary_ar: string;
+  /** Only set for create_patient (and create_appointment when a new patient
+   * was also added). Drives the cascade delete. */
+  patient_id: string | null;
+  /** Only set for create_appointment / reschedule_appointment. */
+  appointment_id: string | null;
+};
+
+export const SEED_AGENT_ACTIVITY: AgentActivity[] = [];
+
 export type ProviderRole = "doctor" | "nurse" | "tech" | "admin";
 
 export type Provider = {
@@ -633,16 +664,16 @@ export function getSeedAppointments(): Appointment[] {
 // ----- Helpers used by the CRUD pages ---------------------------------------
 
 export function nextId(
-  prefix: "DEP" | "PRV" | "APT" | "PAT" | "OVR",
+  prefix: "DEP" | "PRV" | "APT" | "PAT" | "OVR" | "LAE",
   items: { id: string }[],
 ): string {
   const max = items.reduce((m, it) => {
-    const match = it.id.match(/^(?:DEP|PRV|APT|PAT|OVR)-(\d+)$/);
+    const match = it.id.match(/^(?:DEP|PRV|APT|PAT|OVR|LAE)-(\d+)$/);
     if (!match) return m;
     const n = parseInt(match[1], 10);
     return n > m ? n : m;
   }, 0);
-  const width = prefix === "PAT" ? 4 : 3;
+  const width = prefix === "PAT" || prefix === "LAE" ? 4 : 3;
   return `${prefix}-${String(max + 1).padStart(width, "0")}`;
 }
 

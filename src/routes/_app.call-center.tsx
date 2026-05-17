@@ -8,7 +8,7 @@ export const Route = createFileRoute("/_app/call-center")({
   beforeLoad: ({ location }) => {
     const p = location.pathname.replace(/\/+$/, "");
     if (p === "/call-center") {
-      throw redirect({ to: "/call-center/knowledge-base" });
+      throw redirect({ to: "/call-center/dashboard" });
     }
   },
   component: () => <Outlet />,
