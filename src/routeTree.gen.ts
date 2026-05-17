@@ -20,6 +20,8 @@ import { Route as AppClinicsRouteImport } from './routes/_app.clinics'
 import { Route as AppCallCenterRouteImport } from './routes/_app.call-center'
 import { Route as AppCalendarRouteImport } from './routes/_app.calendar'
 import { Route as AppAppointmentsRouteImport } from './routes/_app.appointments'
+import { Route as AppCallCenterPersonaRouteImport } from './routes/_app.call-center.persona'
+import { Route as AppCallCenterKnowledgeBaseRouteImport } from './routes/_app.call-center.knowledge-base'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -75,30 +77,45 @@ const AppAppointmentsRoute = AppAppointmentsRouteImport.update({
   path: '/appointments',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCallCenterPersonaRoute = AppCallCenterPersonaRouteImport.update({
+  id: '/persona',
+  path: '/persona',
+  getParentRoute: () => AppCallCenterRoute,
+} as any)
+const AppCallCenterKnowledgeBaseRoute =
+  AppCallCenterKnowledgeBaseRouteImport.update({
+    id: '/knowledge-base',
+    path: '/knowledge-base',
+    getParentRoute: () => AppCallCenterRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/appointments': typeof AppAppointmentsRoute
   '/calendar': typeof AppCalendarRoute
-  '/call-center': typeof AppCallCenterRoute
+  '/call-center': typeof AppCallCenterRouteWithChildren
   '/clinics': typeof AppClinicsRoute
   '/dashboard': typeof AppDashboardRoute
   '/patients': typeof AppPatientsRoute
   '/providers': typeof AppProvidersRoute
   '/settings': typeof AppSettingsRoute
+  '/call-center/knowledge-base': typeof AppCallCenterKnowledgeBaseRoute
+  '/call-center/persona': typeof AppCallCenterPersonaRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/appointments': typeof AppAppointmentsRoute
   '/calendar': typeof AppCalendarRoute
-  '/call-center': typeof AppCallCenterRoute
+  '/call-center': typeof AppCallCenterRouteWithChildren
   '/clinics': typeof AppClinicsRoute
   '/dashboard': typeof AppDashboardRoute
   '/patients': typeof AppPatientsRoute
   '/providers': typeof AppProvidersRoute
   '/settings': typeof AppSettingsRoute
+  '/call-center/knowledge-base': typeof AppCallCenterKnowledgeBaseRoute
+  '/call-center/persona': typeof AppCallCenterPersonaRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -107,12 +124,14 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_app/appointments': typeof AppAppointmentsRoute
   '/_app/calendar': typeof AppCalendarRoute
-  '/_app/call-center': typeof AppCallCenterRoute
+  '/_app/call-center': typeof AppCallCenterRouteWithChildren
   '/_app/clinics': typeof AppClinicsRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/patients': typeof AppPatientsRoute
   '/_app/providers': typeof AppProvidersRoute
   '/_app/settings': typeof AppSettingsRoute
+  '/_app/call-center/knowledge-base': typeof AppCallCenterKnowledgeBaseRoute
+  '/_app/call-center/persona': typeof AppCallCenterPersonaRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -127,6 +146,8 @@ export interface FileRouteTypes {
     | '/patients'
     | '/providers'
     | '/settings'
+    | '/call-center/knowledge-base'
+    | '/call-center/persona'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -139,6 +160,8 @@ export interface FileRouteTypes {
     | '/patients'
     | '/providers'
     | '/settings'
+    | '/call-center/knowledge-base'
+    | '/call-center/persona'
   id:
     | '__root__'
     | '/'
@@ -152,6 +175,8 @@ export interface FileRouteTypes {
     | '/_app/patients'
     | '/_app/providers'
     | '/_app/settings'
+    | '/_app/call-center/knowledge-base'
+    | '/_app/call-center/persona'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -239,13 +264,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAppointmentsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/call-center/persona': {
+      id: '/_app/call-center/persona'
+      path: '/persona'
+      fullPath: '/call-center/persona'
+      preLoaderRoute: typeof AppCallCenterPersonaRouteImport
+      parentRoute: typeof AppCallCenterRoute
+    }
+    '/_app/call-center/knowledge-base': {
+      id: '/_app/call-center/knowledge-base'
+      path: '/knowledge-base'
+      fullPath: '/call-center/knowledge-base'
+      preLoaderRoute: typeof AppCallCenterKnowledgeBaseRouteImport
+      parentRoute: typeof AppCallCenterRoute
+    }
   }
 }
+
+interface AppCallCenterRouteChildren {
+  AppCallCenterKnowledgeBaseRoute: typeof AppCallCenterKnowledgeBaseRoute
+  AppCallCenterPersonaRoute: typeof AppCallCenterPersonaRoute
+}
+
+const AppCallCenterRouteChildren: AppCallCenterRouteChildren = {
+  AppCallCenterKnowledgeBaseRoute: AppCallCenterKnowledgeBaseRoute,
+  AppCallCenterPersonaRoute: AppCallCenterPersonaRoute,
+}
+
+const AppCallCenterRouteWithChildren = AppCallCenterRoute._addFileChildren(
+  AppCallCenterRouteChildren,
+)
 
 interface AppRouteChildren {
   AppAppointmentsRoute: typeof AppAppointmentsRoute
   AppCalendarRoute: typeof AppCalendarRoute
-  AppCallCenterRoute: typeof AppCallCenterRoute
+  AppCallCenterRoute: typeof AppCallCenterRouteWithChildren
   AppClinicsRoute: typeof AppClinicsRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppPatientsRoute: typeof AppPatientsRoute
@@ -256,7 +309,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppAppointmentsRoute: AppAppointmentsRoute,
   AppCalendarRoute: AppCalendarRoute,
-  AppCallCenterRoute: AppCallCenterRoute,
+  AppCallCenterRoute: AppCallCenterRouteWithChildren,
   AppClinicsRoute: AppClinicsRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppPatientsRoute: AppPatientsRoute,
