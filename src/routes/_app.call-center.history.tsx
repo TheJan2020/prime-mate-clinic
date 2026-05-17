@@ -16,6 +16,8 @@ export const Route = createFileRoute("/_app/call-center/history")({
   component: HistoryPage,
 });
 
+type EnhancedStatus = "pending" | "running" | "done" | "failed";
+
 type CallSummary = {
   id: string;
   call_id: string | null;
@@ -25,11 +27,15 @@ type CallSummary = {
   peer: string | null;
   caller_phone: string | null;
   turn_count: number;
+  enhanced_status: EnhancedStatus;
+  enhanced_turn_count: number;
   has_caller_wav: boolean;
   has_agent_wav: boolean;
+  has_mixed_wav: boolean;
 };
 
 type Turn = { role: "caller" | "agent"; text: string; ts: number };
+type EnhancedTurn = { role: "caller" | "agent"; text: string };
 
 type CallDetail = {
   id: string;
@@ -41,6 +47,9 @@ type CallDetail = {
   caller_phone: string | null;
   voice: string;
   turns: Turn[];
+  enhanced_turns: EnhancedTurn[] | null;
+  enhanced_status: EnhancedStatus;
+  enhanced_error?: string | null;
 };
 
 function HistoryPage() {
@@ -66,23 +75,38 @@ function HistoryPage() {
 
   useEffect(() => { loadList(); }, [loadList]);
 
+  const fetchDetail = useCallback(async (id: string) => {
+    try {
+      const r = await fetch(`/api/demo/clinic/agent/calls/${encodeURIComponent(id)}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data: CallDetail = await r.json();
+      setDetail((prev) => ({ ...prev, [id]: data }));
+      return data;
+    } catch {
+      return null;
+    }
+  }, []);
+
   const toggleExpand = async (c: CallSummary) => {
     if (expanded === c.id) {
       setExpanded(null);
       return;
     }
     setExpanded(c.id);
-    if (!detail[c.id]) {
-      try {
-        const r = await fetch(`/api/demo/clinic/agent/calls/${encodeURIComponent(c.id)}`);
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const data: CallDetail = await r.json();
-        setDetail((prev) => ({ ...prev, [c.id]: data }));
-      } catch {
-        /* swallow — the row just stays minimal */
-      }
-    }
+    if (!detail[c.id]) await fetchDetail(c.id);
   };
+
+  // While a call is open and its enhanced transcript is still being
+  // produced, re-poll every 4 s so the user sees the cleaned-up version
+  // appear without having to refresh.
+  useEffect(() => {
+    if (!expanded) return;
+    const d = detail[expanded];
+    if (!d) return;
+    if (d.enhanced_status !== "pending" && d.enhanced_status !== "running") return;
+    const t = setInterval(() => { fetchDetail(expanded); loadList(); }, 4000);
+    return () => clearInterval(t);
+  }, [expanded, detail, fetchDetail, loadList]);
 
   const confirmDelete = async () => {
     if (!deleting) return;
@@ -180,6 +204,12 @@ function HistoryPage() {
 
               {expanded === c.id && (
                 <div className="mt-3 space-y-3 rounded-md border border-border bg-muted/20 p-4">
+                  {c.has_mixed_wav && (
+                    <AudioBlock
+                      label={t("fullCallAudio" as never)}
+                      url={`/api/demo/clinic/agent/calls/${encodeURIComponent(c.id)}/audio/mixed`}
+                    />
+                  )}
                   <div className="grid gap-3 sm:grid-cols-2">
                     {c.has_caller_wav && (
                       <AudioBlock
@@ -194,7 +224,7 @@ function HistoryPage() {
                       />
                     )}
                   </div>
-                  <TranscriptBlock t={t} turns={detail[c.id]?.turns} />
+                  <TranscriptBlock t={t} detail={detail[c.id]} />
                 </div>
               )}
             </li>
@@ -236,23 +266,64 @@ function AudioBlock({ label, url }: { label: string; url: string }) {
 }
 
 function TranscriptBlock({
-  t, turns,
+  t, detail,
 }: {
   t: (k: never) => string;
-  turns?: Turn[];
+  detail?: CallDetail;
 }) {
-  if (!turns) {
+  if (!detail) {
     return <div className="text-xs text-muted-foreground">…</div>;
   }
-  if (turns.length === 0) {
+  const enhanced = (detail.enhanced_turns || []).filter((x) => (x.text || "").trim());
+  const live = (detail.turns || []).filter((x) => (x.text || "").trim());
+  const useEnhanced = enhanced.length > 0;
+  const turns: { role: "caller" | "agent"; text: string }[] =
+    useEnhanced ? enhanced : live;
+
+  if (!useEnhanced && live.length === 0) {
     return <div className="text-xs text-muted-foreground">{t("noTranscript" as never)}</div>;
   }
+
+  const statusBanner = (() => {
+    const s = detail.enhanced_status;
+    if (useEnhanced) return null;
+    if (s === "pending")
+      return { tone: "muted", text: t("enhancedPending" as never) };
+    if (s === "running")
+      return { tone: "muted", text: t("enhancedRunning" as never) };
+    if (s === "failed")
+      return { tone: "warn", text: t("enhancedFailed" as never) };
+    return null;
+  })();
+
   return (
     <div>
-      <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
         <MessageCircle className="h-3.5 w-3.5" />
-        {t("transcript" as never)}
+        <span>{useEnhanced ? t("enhancedTranscript" as never) : t("liveTranscriptLabel" as never)}</span>
+        {useEnhanced && (
+          <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+            {t("enhancedTranscript" as never)}
+          </span>
+        )}
       </div>
+      {useEnhanced && (
+        <p className="mb-2 text-[11px] text-muted-foreground">
+          {t("enhancedTranscriptHint" as never)}
+        </p>
+      )}
+      {statusBanner && (
+        <div
+          className={
+            "mb-2 rounded-md border px-2 py-1.5 text-[11px] " +
+            (statusBanner.tone === "warn"
+              ? "border-amber-400/40 bg-amber-400/10 text-amber-700 dark:text-amber-300"
+              : "border-border bg-muted/40 text-muted-foreground")
+          }
+        >
+          {statusBanner.text}
+        </div>
+      )}
       <div className="space-y-2">
         {turns.map((turn, i) => (
           <div

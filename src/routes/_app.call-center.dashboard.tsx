@@ -20,7 +20,8 @@ import {
   SEED_DEPARTMENTS, SEED_PATIENTS, SEED_PROVIDERS, SEED_SLOT_OVERRIDES,
   DEFAULT_WORKING_HOURS, SLOT_MINUTES,
   bookedSlotsForDate, getSeedAppointments, isBreakSlot, localized,
-  nextId, slotsForDay, timeToMinutes, useDemoCollection, weekdayOf,
+  nextId, slotsForDay, suggestIdNumber, timeToMinutes, useDemoCollection,
+  weekdayOf,
   type AgentActivity, type AgentActionKind, type Appointment,
   type ClinicSlotOverride, type Department, type Patient, type Provider,
   type Gender,
@@ -234,15 +235,16 @@ function DashboardPage() {
   const appendActivity = (
     payload: Omit<AgentActivity, "id" | "ts" | "call_id" | "caller_name" | "caller_phone">,
   ) => {
+    const active = activeCallList[0];
     const entry: AgentActivity = {
       id: nextId("LAE", activity),
       ts: new Date().toISOString(),
-      call_id: DEMO_CALL.id,
-      caller_name: DEMO_CALL.name_en,
-      caller_phone: DEMO_CALL.phone,
+      call_id: active?.call_id ?? "simulated",
+      caller_name: active?.caller_name ?? "(simulated)",
+      caller_phone: active?.caller_phone ?? "",
       ...payload,
     };
-    setActivity([entry, ...activity]);
+    setActivity((prev) => [entry, ...prev]);
   };
 
   // Sort newest first for display
@@ -565,6 +567,7 @@ function generateRandomPatient(existing: Patient[]): Patient {
   return {
     id: id,
     file_number: fileNum,
+    id_number: suggestIdNumber(existing),
     name: `${f} ${last}`,
     name_ar: `${firstAr[f]} ${lastAr}`,
     gender,
