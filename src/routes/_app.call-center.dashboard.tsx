@@ -1,8 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
-  PhoneCall, UserPlus, CalendarPlus, CalendarX, CalendarClock,
-  Trash2, Sparkles, Activity,
+  PhoneCall, PhoneForwarded, UserPlus, UserCheck, CalendarPlus, CalendarX,
+  CalendarClock, Trash2, Sparkles, Activity, ChevronRight, ChevronDown,
+  AlertTriangle, ShieldAlert, Headphones, MessageSquare, Megaphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +14,9 @@ import {
 import { useApp } from "@/lib/i18n";
 import {
   useLiveAgentStore,
+  acknowledgeFlag,
   type LiveCall,
+  type SupervisorFlag,
 } from "@/lib/liveAgentStore";
 import {
   SEED_AGENT_ACTIVITY,
@@ -60,8 +63,33 @@ function DashboardPage() {
     () => Object.values(live.liveCalls).sort((a, b) => b.started_at - a.started_at),
     [live.liveCalls],
   );
-  const activeCall = activeCallList[0] ?? null;
+  // Set of call_ids where the agent has created a new patient file —
+  // flips that row's badge from yellow to green even if `caller_identified`
+  // never fires (lookup found nobody, but create_patient succeeded).
+  const callsWithCreatedPatient = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of live.recentMutations) {
+      if (m.kind === "patient_created" && m.call_id) set.add(m.call_id);
+    }
+    return set;
+  }, [live.recentMutations]);
   const wsConnected = live.wsConnected;
+
+  // Supervisor extension — read from the same escalation config that the
+  // agent's persona uses. Refetched on focus so editing it in Call Center
+  // → Configuration reflects on the Dashboard without a page reload.
+  const [supervisorExt, setSupervisorExt] = useState<string>("");
+  useEffect(() => {
+    const load = () => {
+      fetch("/api/demo/clinic/agent/escalation")
+        .then((r) => r.ok ? r.json() : null)
+        .then((d) => { if (d && typeof d.supervisor_extension === "string") setSupervisorExt(d.supervisor_extension); })
+        .catch(() => { /* silent — banner just hides the dial button */ });
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => window.removeEventListener("focus", load);
+  }, []);
 
   // Snapshot push + tool_mutation drain both moved to _app.tsx so the
   // SPA's localStorage stays in sync with the agent's writes regardless
@@ -213,66 +241,17 @@ function DashboardPage() {
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{t("dashboardDesc")}</p>
       </div>
 
-      {/* Active calls + transcript — both driven by the agent WebSocket */}
-      <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
-        <div className="rounded-xl border border-border bg-card">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div className="flex items-center gap-2">
-              <PhoneCall className={`h-4 w-4 ${activeCall ? "text-emerald-600" : "text-muted-foreground"}`} />
-              <h2 className="text-sm font-semibold">{t("activeCallsHeading")}</h2>
-            </div>
-            <div className="flex items-center gap-2 text-xs">
-              {!wsConnected && (
-                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300">
-                  reconnecting…
-                </span>
-              )}
-              <span className="text-muted-foreground">{activeCallList.length}</span>
-            </div>
-          </div>
-          {activeCall
-            ? <ActiveCallCard call={activeCall} t={t} />
-            : <div className="p-6 text-center text-sm text-muted-foreground">{t("noActiveCalls")}</div>
-          }
-        </div>
-
-        <div className="rounded-xl border border-border bg-card">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold">{t("liveTranscript")}</h2>
-            </div>
-            <span className="text-xs text-muted-foreground">
-              {activeCall ? `${activeCall.turns.length} turns` : "—"}
-            </span>
-          </div>
-          <div className="max-h-[360px] space-y-2 overflow-y-auto p-4">
-            {(activeCall?.turns ?? []).length === 0 && (
-              <div className="py-8 text-center text-sm text-muted-foreground">
-                {activeCall
-                  ? "Awaiting first transcribed turn…"
-                  : t("noActiveCalls")}
-              </div>
-            )}
-            {activeCall?.turns.map((m, i) => (
-              <div
-                key={i}
-                className={`flex flex-col rounded-lg p-2.5 text-sm ${
-                  m.who === "agent"
-                    ? "bg-primary/10 text-foreground"
-                    : "bg-muted/50 text-foreground"
-                }`}
-                dir="auto"
-              >
-                <span className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  {m.who === "agent" ? t("agentLabel") : t("callerLabel")}
-                </span>
-                <span>{m.text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* One unified Live Calls table — multi-call, yellow→green by
+       *  identification, RED when the agent (or auto-detect) raised a
+       *  supervisor flag, click row to expand the live transcript. */}
+      <LiveCallsTable
+        calls={activeCallList}
+        callsWithCreatedPatient={callsWithCreatedPatient}
+        supervisorFlags={live.supervisorFlags}
+        supervisorExtension={supervisorExt}
+        wsConnected={wsConnected}
+        t={t}
+      />
 
       {/* Fabrication warnings — the agent SPOKE an identifier we
        *  can prove no tool returned. The backend already nudged the
@@ -445,52 +424,544 @@ function DashboardPage() {
 
 // ---------- subcomponents -------------------------------------------------
 
-function ActiveCallCard({
-  call, t,
+function isCallIdentified(c: LiveCall, createdPatientCallIds: Set<string>): boolean {
+  return (
+    c.caller_name !== "New patient" ||
+    c.caller_phone !== null ||
+    createdPatientCallIds.has(c.call_id)
+  );
+}
+
+function fmtElapsed(startedAtSec: number, nowMs: number): string {
+  const s = Math.max(0, Math.floor((nowMs - startedAtSec * 1000) / 1000));
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/**
+ * Heuristic: the transcript turn is almost certainly a Gemini mis-classification
+ * (echo, breathing, line noise) rather than real caller speech. Saudi-clinic
+ * callers speak Arabic + occasionally English; if we see a turn that's mostly
+ * CJK / Cyrillic / Greek / Hebrew / etc, it's noise being decoded as random
+ * dictionary words from other languages.
+ *
+ * Returns true if >40% of the non-space characters fall outside Arabic +
+ * Latin (incl. Arabic-Indic digits, common punctuation).
+ */
+function looksLikeGarbage(text: string): boolean {
+  if (!text) return false;
+  let arabic = 0, latin = 0, other = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0)!;
+    // Skip whitespace + most common punctuation/symbols.
+    if (code <= 0x002F) continue;
+    if (code >= 0x003A && code <= 0x0040) continue;
+    if (code >= 0x005B && code <= 0x0060) continue;
+    if (code >= 0x007B && code <= 0x007F) continue;
+    // Arabic block (0600-06FF) + Arabic Presentation Forms-A/B (FB50-FDFF, FE70-FEFF).
+    if ((code >= 0x0600 && code <= 0x06FF) ||
+        (code >= 0xFB50 && code <= 0xFDFF) ||
+        (code >= 0xFE70 && code <= 0xFEFF)) {
+      arabic++;
+    } else if (
+      // Basic Latin letters/digits + Latin-1 Supplement + Latin Extended-A.
+      (code >= 0x0030 && code <= 0x0039) ||
+      (code >= 0x0041 && code <= 0x005A) ||
+      (code >= 0x0061 && code <= 0x007A) ||
+      (code >= 0x00A0 && code <= 0x017F)
+    ) {
+      latin++;
+    } else {
+      other++;
+    }
+  }
+  const total = arabic + latin + other;
+  if (total < 3) return false;            // too short to judge
+  return other / total > 0.4;
+}
+
+function LiveCallsTable({
+  calls, callsWithCreatedPatient, supervisorFlags, supervisorExtension,
+  wsConnected, t,
 }: {
-  call: LiveCall;
+  calls: LiveCall[];
+  callsWithCreatedPatient: Set<string>;
+  supervisorFlags: Record<string, SupervisorFlag>;
+  supervisorExtension: string;
+  wsConnected: boolean;
   t: (k: never) => string;
 }) {
-  // Live-ticking duration counter — recomputed every second from the
-  // server-provided started_at.
-  const [now, setNow] = useState<number>(Date.now());
+  // One row may be expanded at a time. Resets when the call ends (the
+  // call_id disappears from the calls prop — the row vanishes and
+  // expanded is harmless to leave stale).
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
-  const elapsedSec = Math.max(0, Math.floor((now - call.started_at * 1000) / 1000));
-  const m = Math.floor(elapsedSec / 60);
-  const s = elapsedSec % 60;
-  const elapsed = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+
+  const identifiedCount = calls.filter((c) => isCallIdentified(c, callsWithCreatedPatient)).length;
+  // Flagged count is computed against active calls only — a flag whose
+  // call already ended is harmless leftover state and gets cleaned up
+  // by the call_ended handler in the store.
+  const flaggedCount = calls.filter((c) => supervisorFlags[c.call_id]).length;
 
   return (
-    <div className="space-y-3 p-4">
+    <div className="rounded-xl border border-border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
+        <div className="flex items-center gap-2">
+          <PhoneCall className={`h-4 w-4 ${calls.length > 0 ? "text-emerald-600" : "text-muted-foreground"}`} />
+          <h2 className="text-sm font-semibold text-card-foreground">{t("activeCallsHeading")}</h2>
+          <span className="text-xs text-muted-foreground">
+            {calls.length === 0
+              ? "0 in progress"
+              : `${calls.length} in progress · ${identifiedCount} identified${flaggedCount > 0 ? ` · ${flaggedCount} flagged` : ""}`}
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-amber-500" />
+            <span className="text-muted-foreground">Unidentified</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            <span className="text-muted-foreground">Identified</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+            </span>
+            <span className="text-muted-foreground">Supervisor flag</span>
+          </span>
+          {!wsConnected && (
+            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300">
+              reconnecting…
+            </span>
+          )}
+          {wsConnected && (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              </span>
+              <span className="text-muted-foreground">Streaming</span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {calls.length === 0 ? (
+        <div className="px-5 py-12 text-center">
+          <div className="text-sm text-muted-foreground">{t("noActiveCalls")}</div>
+          <div className="mt-1 text-xs text-muted-foreground/80">
+            Calls will appear here automatically as they come in.
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-12 gap-3 border-b border-border px-5 py-2 text-xs uppercase tracking-wide text-muted-foreground">
+            <div className="col-span-1" />
+            <div className="col-span-3">Caller</div>
+            <div className="col-span-2">Status · Duration</div>
+            <div className="col-span-3">Last from caller</div>
+            <div className="col-span-3">Last from agent</div>
+          </div>
+          <div className="divide-y divide-border">
+            {calls.map((c) => (
+              <LiveCallRow
+                key={c.call_id}
+                call={c}
+                identified={isCallIdentified(c, callsWithCreatedPatient)}
+                flag={supervisorFlags[c.call_id] ?? null}
+                supervisorExtension={supervisorExtension}
+                expanded={expandedId === c.call_id}
+                onToggle={() =>
+                  setExpandedId((prev) => (prev === c.call_id ? null : c.call_id))
+                }
+                nowMs={nowMs}
+                t={t}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function LiveCallRow({
+  call, identified, flag, supervisorExtension, expanded, onToggle, nowMs, t,
+}: {
+  call: LiveCall;
+  identified: boolean;
+  /** When non-null this row is escalated to a human supervisor and
+   * paints red regardless of identification state. */
+  flag: SupervisorFlag | null;
+  supervisorExtension: string;
+  expanded: boolean;
+  onToggle: () => void;
+  nowMs: number;
+  t: (k: never) => string;
+}) {
+  // Flag tint trumps identification tint — a flagged call is the most
+  // urgent state and must visually beat the green/yellow signal.
+  const tint = flag
+    ? (flag.severity === "high"
+        ? "border-l-4 border-l-red-600 bg-red-500/15"
+        : "border-l-4 border-l-red-500 bg-red-500/10")
+    : identified
+      ? "border-l-4 border-l-emerald-500 bg-emerald-500/5"
+      : "border-l-4 border-l-amber-500 bg-amber-500/10";
+
+  const lastCaller = call.turns.filter((m) => m.who === "caller").slice(-2);
+  const lastAgent  = call.turns.filter((m) => m.who === "agent").slice(-2);
+
+  return (
+    <div className={tint}>
+      {flag && (
+        <FlagBanner flag={flag} callId={call.call_id} extension={supervisorExtension} />
+      )}
+      <button
+        type="button"
+        onClick={onToggle}
+        className="grid w-full grid-cols-12 items-start gap-3 px-5 py-3 text-left text-sm transition-colors hover:bg-foreground/[0.03]"
+        aria-expanded={expanded}
+        title={expanded ? "Click to collapse" : "Click to expand live transcript"}
+      >
+        <div className="col-span-1 flex items-center pt-0.5">
+          {expanded
+            ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+        </div>
+        <div className="col-span-3 min-w-0">
+          <div className="truncate font-medium text-foreground" dir="auto">{call.caller_name}</div>
+          <div className="truncate font-mono text-xs text-muted-foreground" dir="ltr">
+            {call.caller_phone ?? call.peer}
+          </div>
+        </div>
+        <div className="col-span-2">
+          {identified ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:text-emerald-400">
+              <UserCheck className="h-3 w-3" /> Identified
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400">
+              <UserPlus className="h-3 w-3" /> Unidentified
+            </span>
+          )}
+          <div className="mt-1 font-mono text-xs text-muted-foreground">
+            {fmtElapsed(call.started_at, nowMs)}
+          </div>
+          {/* Always-on dial button — copies the configured supervisor
+              extension so the operator can join ANY call, not only
+              flagged ones. Hidden hint links to the config page when
+              the extension hasn't been set yet. */}
+          <div className="mt-1.5">
+            <DialModeButtons extension={supervisorExtension} callId={call.call_id} />
+          </div>
+        </div>
+        <div className="col-span-3 min-w-0 space-y-0.5 text-xs">
+          {lastCaller.length === 0 ? (
+            <span className="italic text-muted-foreground">— awaiting —</span>
+          ) : (
+            lastCaller.map((m, i) =>
+              looksLikeGarbage(m.text) ? (
+                <div key={i} className="line-clamp-1 italic text-muted-foreground/70">
+                  [unintelligible audio]
+                </div>
+              ) : (
+                <div key={i} className="line-clamp-1 text-foreground" dir="auto">{m.text}</div>
+              ),
+            )
+          )}
+        </div>
+        <div className="col-span-3 min-w-0 space-y-0.5 text-xs">
+          {lastAgent.length === 0 ? (
+            <span className="italic text-muted-foreground">— awaiting —</span>
+          ) : (
+            lastAgent.map((m, i) => (
+              <div key={i} className="line-clamp-1 text-foreground" dir="auto">{m.text}</div>
+            ))
+          )}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-border bg-card/60 px-5 py-3">
+          <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+            <Activity className="h-3 w-3 text-primary" />
+            <span className="font-medium uppercase tracking-wide">{t("liveTranscript" as never)}</span>
+            <span>·</span>
+            <span>{call.turns.length} turns</span>
+          </div>
+          <div className="max-h-[28rem] space-y-2 overflow-y-auto rounded-md border border-border bg-muted/20 p-3">
+            {call.turns.length === 0 && (
+              <div className="py-6 text-center text-sm text-muted-foreground">
+                Awaiting first transcribed turn…
+              </div>
+            )}
+            {call.turns.map((m, i) => {
+              const garbage = m.who === "caller" && looksLikeGarbage(m.text);
+              return (
+                <div
+                  key={i}
+                  className={`flex ${m.who === "agent" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={
+                      "max-w-[80%] rounded-lg px-3 py-2 text-sm " +
+                      (m.who === "agent"
+                        ? "bg-primary/10 text-foreground"
+                        : garbage
+                          ? "border border-dashed border-border bg-muted/30 text-muted-foreground italic"
+                          : "border border-border bg-card text-foreground")
+                    }
+                    dir="auto"
+                  >
+                    <div className="mb-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {m.who === "agent" ? t("agentLabel" as never) : t("callerLabel" as never)}
+                      {garbage && " · likely noise / echo"}
+                    </div>
+                    {garbage ? "[unintelligible audio]" : m.text}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Three-button group: Listen / Whisper / Barge. Each POSTs to
+ *  /agent/calls/{id}/dial_supervisor?mode=<X>; backend originates an AMI
+ *  ChanSpy with the matching option string. On any failure (AMI creds
+ *  missing, FreePBX unreachable, etc.) the clicked button falls back to
+ *  copying the extension to clipboard so the operator isn't stranded —
+ *  the error surfaces in the button's title attribute. */
+type SpyMode = "listen" | "whisper" | "barge";
+
+const MODE_META: Record<SpyMode, {
+  label:   string;
+  Icon:    typeof Headphones;
+  title:   string;
+  doneMsg: string;
+}> = {
+  listen: {
+    label:   "Listen",
+    Icon:    Headphones,
+    title:   "Listen silently — neither the caller nor the AI knows you're on the line",
+    doneMsg: "Listening",
+  },
+  whisper: {
+    label:   "Whisper",
+    Icon:    MessageSquare,
+    title:   "Coach the caller — your voice goes ONLY to them, the AI doesn't hear you",
+    doneMsg: "Whispering",
+  },
+  barge: {
+    label:   "Barge",
+    Icon:    Megaphone,
+    title:   "3-way — both the caller AND the AI hear you (full join-in)",
+    doneMsg: "Joined",
+  },
+};
+
+function DialModeButtons({
+  extension,
+  callId,
+  variant = "neutral",
+}: {
+  extension: string;
+  callId: string;
+  variant?: "neutral" | "alert";
+}) {
+  const border = variant === "alert"
+    ? "border-red-500/40 hover:bg-red-500/10"
+    : "border-border hover:bg-muted";
+
+  if (!extension) {
+    return (
+      <Link
+        to="/call-center/configuration"
+        onClick={(e) => e.stopPropagation()}
+        className={`inline-flex items-center gap-1 rounded-md border bg-background px-2 py-0.5 text-[11px] font-medium ${border}`}
+        title="No supervisor extension configured yet — click to set one in Call Center → Configuration"
+      >
+        <PhoneForwarded className="h-3 w-3" />
+        Set ext.
+      </Link>
+    );
+  }
+
+  return (
+    <div className="inline-flex items-center gap-1">
+      <span className="font-mono text-[10px] text-muted-foreground" title="Configured supervisor extension">
+        ext {extension}
+      </span>
+      <div className="inline-flex overflow-hidden rounded-md border" role="group">
+        {(["listen", "whisper", "barge"] as SpyMode[]).map((m, i) => (
+          <DialModeOne
+            key={m}
+            mode={m}
+            extension={extension}
+            callId={callId}
+            variant={variant}
+            // Visual separation between adjacent buttons in the group.
+            divider={i > 0}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DialModeOne({
+  mode, extension, callId, variant, divider,
+}: {
+  mode: SpyMode;
+  extension: string;
+  callId: string;
+  variant: "neutral" | "alert";
+  divider: boolean;
+}) {
+  const [state, setState] = useState<
+    | { kind: "idle" }
+    | { kind: "calling" }
+    | { kind: "ringing" }
+    | { kind: "copied" }
+    | { kind: "failed"; error: string }
+  >({ kind: "idle" });
+
+  const copyToClipboard = async () => {
+    try {
+      await navigator.clipboard.writeText(extension);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = extension;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch { /* swallow */ }
+      document.body.removeChild(ta);
+    }
+  };
+
+  const onClick = async () => {
+    if (!callId) {
+      // No active call associated with this row — fall back to copy.
+      await copyToClipboard();
+      setState({ kind: "copied" });
+      window.setTimeout(() => setState({ kind: "idle" }), 2000);
+      return;
+    }
+    setState({ kind: "calling" });
+    try {
+      const r = await fetch(
+        `/api/demo/clinic/agent/calls/${encodeURIComponent(callId)}/dial_supervisor?mode=${mode}`,
+        { method: "POST" },
+      );
+      const data = await r.json().catch(() => ({}));
+      if (r.ok && data?.ok) {
+        setState({ kind: "ringing" });
+        window.setTimeout(() => setState({ kind: "idle" }), 3500);
+      } else {
+        const errMsg = data?.error || data?.detail || `HTTP ${r.status}`;
+        await copyToClipboard();
+        setState({ kind: "failed", error: errMsg });
+        window.setTimeout(() => setState({ kind: "idle" }), 5000);
+      }
+    } catch (e: any) {
+      await copyToClipboard();
+      setState({ kind: "failed", error: e?.message || "network error" });
+      window.setTimeout(() => setState({ kind: "idle" }), 5000);
+    }
+  };
+
+  const meta = MODE_META[mode];
+  const baseBg = variant === "alert" ? "hover:bg-red-500/10" : "hover:bg-muted";
+  const dividerCls = divider ? "border-s border-border" : "";
+
+  let label: string;
+  let title: string;
+  let busy = false;
+  if (state.kind === "calling") {
+    label = "…";
+    title = `Dialing ${extension} (${mode}) via AMI`;
+    busy = true;
+  } else if (state.kind === "ringing") {
+    label = meta.doneMsg;
+    title = `Phone is ringing on ext. ${extension} — pick up to ${meta.label.toLowerCase()}`;
+  } else if (state.kind === "copied") {
+    label = "Copied";
+    title = "Extension copied — paste into your softphone";
+  } else if (state.kind === "failed") {
+    label = "Copied";
+    title = `Auto-dial (${mode}) failed: ${state.error}\nExtension copied as fallback. Fix in Configuration → PBX integration.`;
+  } else {
+    label = meta.label;
+    title = meta.title;
+  }
+
+  const Icon = meta.Icon;
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      disabled={busy}
+      className={`inline-flex items-center gap-1 bg-background px-2 py-0.5 text-[11px] font-medium disabled:opacity-60 ${baseBg} ${dividerCls}`}
+      title={title}
+    >
+      <Icon className="h-3 w-3" />
+      <span className="hidden sm:inline">{label}</span>
+    </button>
+  );
+}
+
+function FlagBanner({
+  flag, callId, extension,
+}: {
+  flag: SupervisorFlag;
+  callId: string;
+  /** PBX extension the supervisor should dial in to. Empty string makes
+   * the dial button render as a "Set ext." link to the config page. */
+  extension: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const onAck = async () => {
+    if (busy) return;
+    setBusy(true);
+    try { await acknowledgeFlag(callId); }
+    finally { setBusy(false); }
+  };
+  const isHigh = flag.severity === "high";
+  return (
+    <div className={`flex flex-wrap items-center justify-between gap-2 border-b px-5 py-2 text-xs ${
+      isHigh
+        ? "border-red-600/40 bg-red-600/10 text-red-700 dark:text-red-300"
+        : "border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300"
+    }`}>
+      <div className="flex min-w-0 items-center gap-2">
+        {isHigh ? <ShieldAlert className="h-4 w-4 shrink-0" /> : <AlertTriangle className="h-4 w-4 shrink-0" />}
+        <span className="font-semibold uppercase tracking-wide">
+          {isHigh ? "Supervisor needed — high" : "Supervisor flagged"}
+        </span>
+        <span className="truncate" dir="auto">{flag.reason}</span>
+        <span className="ms-1 hidden text-[10px] uppercase opacity-70 sm:inline">
+          via {flag.source}
+        </span>
+      </div>
       <div className="flex items-center gap-2">
-        <span className="relative inline-flex h-2.5 w-2.5">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
-          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-        </span>
-        <span className="text-xs font-medium uppercase tracking-wide text-emerald-600">
-          {t("statusInCall" as never)}
-        </span>
-      </div>
-      <div>
-        <div className="text-base font-semibold text-foreground">
-          {call.caller_name}
-        </div>
-        <div className="font-mono text-xs text-muted-foreground" dir="ltr">
-          {call.caller_phone ?? call.peer}
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="rounded-lg bg-muted/40 p-2">
-          <div className="text-[10px] uppercase text-muted-foreground">{t("callDuration" as never)}</div>
-          <div className="mt-1 font-mono text-foreground">{elapsed}</div>
-        </div>
-        <div className="rounded-lg bg-muted/40 p-2">
-          <div className="text-[10px] uppercase text-muted-foreground">{t("callerStatus" as never)}</div>
-          <div className="mt-1 text-foreground">{t("statusInCall" as never)}</div>
-        </div>
+        <DialModeButtons extension={extension} callId={callId} variant="alert" />
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onAck(); }}
+          disabled={busy}
+          className="rounded-md border border-red-500/40 bg-background px-2 py-0.5 text-[11px] font-medium hover:bg-red-500/10 disabled:opacity-50"
+        >
+          {busy ? "Acknowledging…" : "Acknowledge"}
+        </button>
       </div>
     </div>
   );

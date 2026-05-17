@@ -53,6 +53,17 @@ export type FabricationEvent = {
   ts: number;          // unix seconds, client-stamped
 };
 
+/** Supervisor flag — set by the backend's `flag_for_supervisor` tool call
+ *  or by an auto-detect pass. Stored per call_id; cleared by the operator
+ *  via POST /agent/calls/{id}/acknowledge_flag. */
+export type SupervisorFlag = {
+  reason: string;
+  /** 'high' = drop everything; 'normal' = check when free. */
+  severity: "low" | "normal" | "high";
+  source: string;       // 'agent' | 'auto_keyword' | 'auto_tool_errors' …
+  ts: number;           // unix seconds (server-stamped)
+};
+
 type State = {
   wsConnected: boolean;
   liveCalls: Record<string, LiveCall>;
@@ -69,6 +80,12 @@ type State = {
    * returned by any tool on this call. Kept across calls until the
    * page is refreshed so the user can spot the pattern. */
   recentFabrications: FabricationEvent[];
+  /** Active supervisor flags keyed by call_id. A flagged call paints
+   * red on the Dashboard with the reason; the operator clicks
+   * Acknowledge to clear which calls POST … /acknowledge_flag and
+   * deletes the entry locally (the backend also broadcasts
+   * supervisor_flag_ack so peer dashboards drop the red tint in sync). */
+  supervisorFlags: Record<string, SupervisorFlag>;
 };
 
 type Listener = () => void;
@@ -79,6 +96,7 @@ let state: State = {
   recentMutations: [],
   recentToolResults: [],
   recentFabrications: [],
+  supervisorFlags: {},
 };
 const listeners = new Set<Listener>();
 let ws: WebSocket | null = null;
@@ -105,6 +123,7 @@ function applyEvent(raw: unknown) {
       // any call_id we already know about, and only seed brand-new ones.
       setState((s) => {
         const merged: Record<string, LiveCall> = { ...s.liveCalls };
+        const mergedFlags: Record<string, SupervisorFlag> = { ...s.supervisorFlags };
         for (const c of (m.calls || [])) {
           const existing = merged[c.call_id];
           if (existing) {
@@ -125,6 +144,17 @@ function applyEvent(raw: unknown) {
               turns:        [],
             };
           }
+          // Snapshot may carry a live supervisor flag — replay it so
+          // dashboards that connect AFTER the flag was raised still see
+          // the red row. Missing/null `flag` means no active flag.
+          if (c.flag && typeof c.flag === "object") {
+            mergedFlags[c.call_id] = {
+              reason:   String(c.flag.reason ?? ""),
+              severity: (c.flag.severity ?? "normal") as SupervisorFlag["severity"],
+              source:   String(c.flag.source ?? "agent"),
+              ts:       Number(c.flag.ts ?? Date.now() / 1000),
+            };
+          }
         }
         // Note: we deliberately do NOT prune calls that aren't in the
         // snapshot. If a call_ended happened while we were disconnected,
@@ -132,7 +162,7 @@ function applyEvent(raw: unknown) {
         // the user's transcript silently. The real call_ended event
         // will clean up if it ever arrives; otherwise a page refresh
         // resets the singleton.
-        return { ...s, liveCalls: merged };
+        return { ...s, liveCalls: merged, supervisorFlags: mergedFlags };
       });
       return;
     }
@@ -156,7 +186,34 @@ function applyEvent(raw: unknown) {
     case "call_ended": {
       setState((s) => {
         const { [m.call_id]: _drop, ...rest } = s.liveCalls;
-        return { ...s, liveCalls: rest };
+        // When the call ends, any pending supervisor flag is moot —
+        // the operator has nothing left to take over.
+        const { [m.call_id]: _flagDrop, ...remainingFlags } = s.supervisorFlags;
+        return { ...s, liveCalls: rest, supervisorFlags: remainingFlags };
+      });
+      return;
+    }
+    case "supervisor_flag": {
+      if (!m.call_id || !m.flag || typeof m.flag !== "object") return;
+      setState((s) => ({
+        ...s,
+        supervisorFlags: {
+          ...s.supervisorFlags,
+          [m.call_id]: {
+            reason:   String(m.flag.reason ?? ""),
+            severity: (m.flag.severity ?? "normal") as SupervisorFlag["severity"],
+            source:   String(m.flag.source ?? "agent"),
+            ts:       Number(m.flag.ts ?? Date.now() / 1000),
+          },
+        },
+      }));
+      return;
+    }
+    case "supervisor_flag_ack": {
+      if (!m.call_id) return;
+      setState((s) => {
+        const { [m.call_id]: _drop, ...rest } = s.supervisorFlags;
+        return { ...s, supervisorFlags: rest };
       });
       return;
     }
@@ -291,6 +348,34 @@ function scheduleReconnect() {
 
 export function liveAgentStoreSnapshot(): State {
   return state;
+}
+
+/** Operator clicked Acknowledge on a flagged row. Optimistically removes
+ * the flag locally, then POSTs to the backend; the backend's broadcast
+ * keeps peer dashboards in sync. If the POST fails we restore — the
+ * optimism is what keeps the UI from feeling laggy. */
+export async function acknowledgeFlag(callId: string): Promise<void> {
+  const prior = state.supervisorFlags[callId];
+  if (!prior) return;
+  setState((s) => {
+    const { [callId]: _drop, ...rest } = s.supervisorFlags;
+    return { ...s, supervisorFlags: rest };
+  });
+  try {
+    const r = await fetch(
+      `/api/demo/clinic/agent/calls/${encodeURIComponent(callId)}/acknowledge_flag`,
+      { method: "POST" },
+    );
+    if (!r.ok) throw new Error(`ack failed: ${r.status}`);
+  } catch (err) {
+    // Restore so the operator sees that the click didn't land.
+    setState((s) => ({
+      ...s,
+      supervisorFlags: { ...s.supervisorFlags, [callId]: prior },
+    }));
+    // eslint-disable-next-line no-console
+    console.warn("[liveAgent] acknowledgeFlag failed", err);
+  }
 }
 
 export function consumeMutation(event: ToolMutationEvent) {
