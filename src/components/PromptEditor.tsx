@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { RotateCcw, Save, Copy, Check, ChevronDown } from "lucide-react";
+import { RotateCcw, Save, Copy, Check, ChevronDown, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/lib/i18n";
@@ -46,6 +46,7 @@ export function PromptEditor({ heading, description, storageKey, defaultText, sh
 
   const compiled = `${saved.trim()}\n\n${liveBlock}`.trim();
   const [copied, setCopied] = useState(false);
+  const [applyState, setApplyState] = useState<"idle" | "sending" | "ok" | "err">("idle");
 
   const onCopy = async () => {
     try {
@@ -53,6 +54,33 @@ export function PromptEditor({ heading, description, storageKey, defaultText, sh
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch { /* clipboard blocked — ignore */ }
+  };
+
+  // Publish the SAVED editable text (not the draft) to the backend so the
+  // SIP-side Live Agent picks it up on its next inbound call. The backend
+  // distinguishes persona vs KB by the storage key — the page's
+  // storageKey === "persona" or "kb".
+  const onApplyToAgent = async () => {
+    setApplyState("sending");
+    try {
+      const body = storageKey === "persona"
+        ? { persona: saved }
+        : storageKey === "kb"
+          ? { kb: saved }
+          : {};
+      const r = await fetch("/api/demo/clinic/agent/prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setApplyState("ok");
+      setTimeout(() => setApplyState("idle"), 1500);
+    } catch (err) {
+      console.error("Apply to agent failed:", err);
+      setApplyState("err");
+      setTimeout(() => setApplyState("idle"), 2500);
+    }
   };
 
   return (
@@ -73,6 +101,17 @@ export function PromptEditor({ heading, description, storageKey, defaultText, sh
           <Button onClick={() => save(draft)} disabled={!dirty}>
             <Save className="me-2 h-4 w-4" />
             {t("save")}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={onApplyToAgent}
+            disabled={applyState === "sending" || dirty}
+            title={dirty ? t("unsavedChanges") : t("applyToAgent")}
+          >
+            <Send className="me-2 h-4 w-4" />
+            {applyState === "ok"  ? t("applied")
+             : applyState === "err" ? t("applyFailed")
+             : t("applyToAgent")}
           </Button>
         </div>
       </div>
