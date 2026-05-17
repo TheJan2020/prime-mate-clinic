@@ -23,8 +23,8 @@ import {
 import { useApp } from "@/lib/i18n";
 import {
   SEED_PATIENTS, useDemoCollection, nextId, localized,
-  isValidFileNumber, suggestFileNumber,
-  type Patient, type Gender,
+  isValidFileNumber, suggestFileNumber, REGISTRATION_SOURCES,
+  type Patient, type Gender, type RegistrationSource,
 } from "@/lib/demoStore";
 
 export const Route = createFileRoute("/_app/patients")({
@@ -48,11 +48,13 @@ function PatientsPage() {
 
   const [search, setSearch] = useState("");
   const [genderFilter, setGenderFilter] = useState<"all" | Gender>("all");
+  const [sourceFilter, setSourceFilter] = useState<"all" | RegistrationSource>("all");
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return items.filter((p) => {
       if (genderFilter !== "all" && p.gender !== genderFilter) return false;
+      if (sourceFilter !== "all" && p.registration_source !== sourceFilter) return false;
       if (!q) return true;
       return (
         p.name.toLowerCase().includes(q) ||
@@ -65,7 +67,7 @@ function PatientsPage() {
         p.city_ar.includes(search.trim())
       );
     });
-  }, [items, search, genderFilter]);
+  }, [items, search, genderFilter, sourceFilter]);
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -81,6 +83,12 @@ function PatientsPage() {
   const [resetOpen, setResetOpen] = useState(false);
 
   const openAdd = () => {
+    const todayYmd = (() => {
+      const d = new Date();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${d.getFullYear()}-${m}-${day}`;
+    })();
     const blank: Patient = {
       id: nextId("PAT", items),
       file_number: suggestFileNumber(items),
@@ -92,6 +100,8 @@ function PatientsPage() {
       email: "",
       city: "",
       city_ar: "",
+      registration_date: todayYmd,
+      registration_source: "walk-in",
       notes: "",
     };
     setEditing(blank);
@@ -174,11 +184,20 @@ function PatientsPage() {
               />
             </div>
             <Select value={genderFilter} onValueChange={(v: "all" | Gender) => setGenderFilter(v)}>
-              <SelectTrigger className="w-[140px]"><SelectValue placeholder={t("gender")} /></SelectTrigger>
+              <SelectTrigger className="w-[130px]"><SelectValue placeholder={t("gender")} /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{t("all")}</SelectItem>
                 <SelectItem value="male">{t("male")}</SelectItem>
                 <SelectItem value="female">{t("female")}</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={sourceFilter} onValueChange={(v: "all" | RegistrationSource) => setSourceFilter(v)}>
+              <SelectTrigger className="w-[170px]"><SelectValue placeholder={t("registrationSource")} /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("all")}</SelectItem>
+                {REGISTRATION_SOURCES.map((s) => (
+                  <SelectItem key={s} value={s}>{sourceLabel(s, t)}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -194,13 +213,14 @@ function PatientsPage() {
                 <th className="px-4 py-2 text-start">{t("age")}</th>
                 <th className="px-4 py-2 text-start">{t("phone")}</th>
                 <th className="px-4 py-2 text-start">{t("city")}</th>
-                <th className="px-4 py-2 text-start">{t("email")}</th>
+                <th className="px-4 py-2 text-start">{t("registrationDate")}</th>
+                <th className="px-4 py-2 text-start">{t("registrationSource")}</th>
                 <th className="px-4 py-2 text-end">{t("actions")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {filtered.length === 0 && (
-                <tr><td colSpan={9} className="px-4 py-6 text-center text-muted-foreground">{t("noResults")}</td></tr>
+                <tr><td colSpan={10} className="px-4 py-6 text-center text-muted-foreground">{t("noResults")}</td></tr>
               )}
               {filtered.map((p) => (
                 <tr key={p.id}>
@@ -211,7 +231,8 @@ function PatientsPage() {
                   <td className="px-4 py-2 text-muted-foreground">{ageFromDob(p.date_of_birth)}</td>
                   <td className="px-4 py-2 font-mono text-xs text-muted-foreground" dir="ltr">{p.phone}</td>
                   <td className="px-4 py-2 text-muted-foreground">{localized(p.city, p.city_ar, lang)}</td>
-                  <td className="px-4 py-2 text-muted-foreground" dir="ltr">{p.email}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-muted-foreground" dir="ltr">{p.registration_date || "—"}</td>
+                  <td className="px-4 py-2"><SourcePill source={p.registration_source} /></td>
                   <td className="px-4 py-2 text-end">
                     <div className="inline-flex gap-1">
                       <Button size="icon" variant="ghost" onClick={() => openEdit(p)} aria-label={t("edit")}>
@@ -292,6 +313,26 @@ function PatientsPage() {
               <Field label={t("email")} className="col-span-2">
                 <Input dir="ltr" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
               </Field>
+              <Field label={t("registrationDate")}>
+                <Input
+                  type="date"
+                  value={draft.registration_date}
+                  onChange={(e) => setDraft({ ...draft, registration_date: e.target.value })}
+                />
+              </Field>
+              <Field label={t("registrationSource")}>
+                <Select
+                  value={draft.registration_source}
+                  onValueChange={(v: RegistrationSource) => setDraft({ ...draft, registration_source: v })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {REGISTRATION_SOURCES.map((s) => (
+                      <SelectItem key={s} value={s}>{sourceLabel(s, t)}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
               <Field label={t("notes")} className="col-span-2">
                 <Textarea value={draft.notes} rows={3} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
               </Field>
@@ -365,6 +406,28 @@ function GenderPill({ gender }: { gender: Gender }) {
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
       {gender === "male" ? t("male") : t("female")}
+    </span>
+  );
+}
+
+function sourceLabel(s: RegistrationSource, t: (k: never) => string): string {
+  switch (s) {
+    case "walk-in":     return t("sourceWalkIn" as never);
+    case "call_center": return t("sourceCallCenter" as never);
+    case "live_agent":  return t("sourceLiveAgent" as never);
+  }
+}
+
+function SourcePill({ source }: { source: RegistrationSource }) {
+  const { t } = useApp();
+  const cls: Record<RegistrationSource, string> = {
+    "walk-in":     "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+    "call_center": "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
+    "live_agent":  "bg-violet-500/15 text-violet-600 dark:text-violet-400",
+  };
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls[source]}`}>
+      {sourceLabel(source, t as (k: never) => string)}
     </span>
   );
 }

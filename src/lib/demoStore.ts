@@ -204,6 +204,12 @@ export type Appointment = {
 
 export type Gender = "male" | "female";
 
+export type RegistrationSource = "walk-in" | "call_center" | "live_agent";
+
+export const REGISTRATION_SOURCES: RegistrationSource[] = [
+  "walk-in", "call_center", "live_agent",
+];
+
 export type Patient = {
   id: string;
   /** Clinic file number — one letter A/B/C then six digits, first digit 1-9. */
@@ -211,11 +217,13 @@ export type Patient = {
   name: string;
   name_ar: string;
   gender: Gender;
-  date_of_birth: string;   // YYYY-MM-DD
+  date_of_birth: string;        // YYYY-MM-DD
   phone: string;
   email: string;
   city: string;
   city_ar: string;
+  registration_date: string;    // YYYY-MM-DD
+  registration_source: RegistrationSource;
   notes: string;
 };
 
@@ -294,58 +302,116 @@ const SAUDI_CITIES: Array<{ en: string; ar: string }> = [
   { en: "Buraydah",     ar: "بريدة" },
 ];
 
-const PATIENT_NAMES: Array<{ en: string; ar: string; gender: Gender }> = [
-  { en: "Sara Al-Otaibi",    ar: "سارة العتيبي",     gender: "female" },
-  { en: "Mohammed Al-Qahtani", ar: "محمد القحطاني",  gender: "male"   },
-  { en: "Fatima Al-Harbi",   ar: "فاطمة الحربي",     gender: "female" },
-  { en: "Omar Al-Ghamdi",    ar: "عمر الغامدي",      gender: "male"   },
-  { en: "Layla Al-Shehri",   ar: "ليلى الشهري",      gender: "female" },
-  { en: "Ahmad Al-Dosari",   ar: "أحمد الدوسري",     gender: "male"   },
-  { en: "Nour Al-Anzi",      ar: "نور العنزي",       gender: "female" },
-  { en: "Karim Al-Mutairi",  ar: "كريم المطيري",     gender: "male"   },
-  { en: "Rana Al-Subaie",    ar: "رنا السبيعي",      gender: "female" },
-  { en: "Hadi Al-Zahrani",   ar: "هادي الزهراني",    gender: "male"   },
-  { en: "Yara Al-Saadi",     ar: "يارا السعدي",      gender: "female" },
-  { en: "Ziad Al-Faraj",     ar: "زياد الفرج",       gender: "male"   },
-  { en: "Mira Al-Khaldi",    ar: "ميرا الخالدي",     gender: "female" },
-  { en: "Tarek Al-Maliki",   ar: "طارق المالكي",     gender: "male"   },
-  { en: "Salim Al-Asiri",    ar: "سالم العسيري",     gender: "male"   },
-  { en: "Dana Al-Rashidi",   ar: "دانة الرشيدي",     gender: "female" },
-  { en: "Bilal Al-Juhani",   ar: "بلال الجهني",      gender: "male"   },
-  { en: "Maya Al-Sahli",     ar: "مايا السهلي",      gender: "female" },
-  { en: "Jamil Al-Balawi",   ar: "جميل البلوي",      gender: "male"   },
-  { en: "Hala Al-Najjar",    ar: "هالة النجار",      gender: "female" },
-  { en: "Khalid Al-Amri",    ar: "خالد العامري",     gender: "male"   },
-  { en: "Reem Al-Khaled",    ar: "ريم الخالد",       gender: "female" },
-  { en: "Faisal Al-Hajri",   ar: "فيصل الهاجري",     gender: "male"   },
-  { en: "Aisha Al-Mansour",  ar: "عائشة المنصور",    gender: "female" },
-  { en: "Hassan Al-Sayed",   ar: "حسن السيد",        gender: "male"   },
-  { en: "Ghada Al-Nasser",   ar: "غادة الناصر",      gender: "female" },
-  { en: "Sultan Al-Faisal",  ar: "سلطان الفيصل",     gender: "male"   },
-  { en: "Lina Al-Saleh",     ar: "لينا الصالح",      gender: "female" },
-  { en: "Rashid Al-Thani",   ar: "راشد الثاني",      gender: "male"   },
-  { en: "Nadia Al-Marri",    ar: "نادية المري",      gender: "female" },
-  { en: "Bandar Al-Sudairi", ar: "بندر السديري",     gender: "male"   },
-  { en: "Hessa Al-Romaihi",  ar: "حصة الرميحي",      gender: "female" },
-  { en: "Talal Al-Dossari",  ar: "طلال الدوسري",     gender: "male"   },
-  { en: "Munira Al-Saud",    ar: "منيرة السعود",     gender: "female" },
-  { en: "Adel Al-Suwaidi",   ar: "عادل السويدي",     gender: "male"   },
-  { en: "Wafa Al-Kuwari",    ar: "وفاء الكواري",     gender: "female" },
-  { en: "Naif Al-Ajmi",      ar: "نايف العجمي",      gender: "male"   },
-  { en: "Sahar Al-Kindi",    ar: "سحر الكندي",       gender: "female" },
-  { en: "Majed Al-Khalifa",  ar: "ماجد آل خليفة",    gender: "male"   },
-  { en: "Lulwa Al-Sabah",    ar: "لولوة الصباح",     gender: "female" },
-  { en: "Saud Al-Otaibi",    ar: "سعود العتيبي",     gender: "male"   },
-  { en: "Norah Al-Harbi",    ar: "نورة الحربي",      gender: "female" },
-  { en: "Yousef Al-Ghamdi",  ar: "يوسف الغامدي",     gender: "male"   },
-  { en: "Asma Al-Shehri",    ar: "أسماء الشهري",     gender: "female" },
-  { en: "Ibrahim Al-Dosari", ar: "إبراهيم الدوسري",  gender: "male"   },
-  { en: "Rawan Al-Mutairi",  ar: "روان المطيري",     gender: "female" },
-  { en: "Mansour Al-Subaie", ar: "منصور السبيعي",    gender: "male"   },
-  { en: "Bushra Al-Zahrani", ar: "بشرى الزهراني",    gender: "female" },
-  { en: "Tareq Al-Saadi",    ar: "طارق السعدي",      gender: "male"   },
-  { en: "Hind Al-Faraj",     ar: "هند الفرج",        gender: "female" },
+const FIRST_NAMES_MALE: Array<{ en: string; ar: string }> = [
+  { en: "Mohammed", ar: "محمد" },
+  { en: "Omar",     ar: "عمر" },
+  { en: "Ahmad",    ar: "أحمد" },
+  { en: "Khalid",   ar: "خالد" },
+  { en: "Faisal",   ar: "فيصل" },
+  { en: "Sultan",   ar: "سلطان" },
+  { en: "Tarek",    ar: "طارق" },
+  { en: "Salim",    ar: "سالم" },
+  { en: "Bilal",    ar: "بلال" },
+  { en: "Yousef",   ar: "يوسف" },
+  { en: "Hassan",   ar: "حسن" },
+  { en: "Karim",    ar: "كريم" },
+  { en: "Hadi",     ar: "هادي" },
+  { en: "Ziad",     ar: "زياد" },
+  { en: "Saud",     ar: "سعود" },
+  { en: "Naif",     ar: "نايف" },
+  { en: "Mansour",  ar: "منصور" },
+  { en: "Adel",     ar: "عادل" },
+  { en: "Bandar",   ar: "بندر" },
+  { en: "Talal",    ar: "طلال" },
+  { en: "Ibrahim",  ar: "إبراهيم" },
+  { en: "Majed",    ar: "ماجد" },
+  { en: "Rashid",   ar: "راشد" },
+  { en: "Jamil",    ar: "جميل" },
 ];
+
+const FIRST_NAMES_FEMALE: Array<{ en: string; ar: string }> = [
+  { en: "Sara",    ar: "سارة" },
+  { en: "Fatima",  ar: "فاطمة" },
+  { en: "Layla",   ar: "ليلى" },
+  { en: "Nour",    ar: "نور" },
+  { en: "Mira",    ar: "ميرا" },
+  { en: "Dana",    ar: "دانة" },
+  { en: "Maya",    ar: "مايا" },
+  { en: "Hala",    ar: "هالة" },
+  { en: "Yara",    ar: "يارا" },
+  { en: "Rana",    ar: "رنا" },
+  { en: "Reem",    ar: "ريم" },
+  { en: "Aisha",   ar: "عائشة" },
+  { en: "Ghada",   ar: "غادة" },
+  { en: "Nadia",   ar: "نادية" },
+  { en: "Munira",  ar: "منيرة" },
+  { en: "Wafa",    ar: "وفاء" },
+  { en: "Sahar",   ar: "سحر" },
+  { en: "Lulwa",   ar: "لولوة" },
+  { en: "Hessa",   ar: "حصة" },
+  { en: "Lina",    ar: "لينا" },
+  { en: "Rawan",   ar: "روان" },
+  { en: "Norah",   ar: "نورة" },
+  { en: "Bushra",  ar: "بشرى" },
+  { en: "Asma",    ar: "أسماء" },
+  { en: "Hind",    ar: "هند" },
+];
+
+const FAMILY_NAMES: Array<{ en: string; ar: string }> = [
+  { en: "Al-Otaibi",   ar: "العتيبي" },
+  { en: "Al-Qahtani",  ar: "القحطاني" },
+  { en: "Al-Harbi",    ar: "الحربي" },
+  { en: "Al-Ghamdi",   ar: "الغامدي" },
+  { en: "Al-Shehri",   ar: "الشهري" },
+  { en: "Al-Dosari",   ar: "الدوسري" },
+  { en: "Al-Anzi",     ar: "العنزي" },
+  { en: "Al-Mutairi",  ar: "المطيري" },
+  { en: "Al-Subaie",   ar: "السبيعي" },
+  { en: "Al-Zahrani",  ar: "الزهراني" },
+  { en: "Al-Saadi",    ar: "السعدي" },
+  { en: "Al-Faraj",    ar: "الفرج" },
+  { en: "Al-Khaldi",   ar: "الخالدي" },
+  { en: "Al-Maliki",   ar: "المالكي" },
+  { en: "Al-Asiri",    ar: "العسيري" },
+  { en: "Al-Rashidi",  ar: "الرشيدي" },
+  { en: "Al-Juhani",   ar: "الجهني" },
+  { en: "Al-Sahli",    ar: "السهلي" },
+  { en: "Al-Balawi",   ar: "البلوي" },
+  { en: "Al-Najjar",   ar: "النجار" },
+  { en: "Al-Amri",     ar: "العامري" },
+  { en: "Al-Khaled",   ar: "الخالد" },
+  { en: "Al-Hajri",    ar: "الهاجري" },
+  { en: "Al-Mansour",  ar: "المنصور" },
+  { en: "Al-Saud",     ar: "السعود" },
+  { en: "Al-Suwaidi",  ar: "السويدي" },
+  { en: "Al-Ajmi",     ar: "العجمي" },
+  { en: "Al-Kindi",    ar: "الكندي" },
+];
+
+/** Generate a deterministic but varied pool of patient identities. The seed
+ * is fixed so the same list comes out on every Reset; bumping `seed` is the
+ * only way to reshuffle. */
+function generatePatientPool(count: number): Array<{ en: string; ar: string; gender: Gender }> {
+  const out: Array<{ en: string; ar: string; gender: Gender }> = [];
+  const used = new Set<string>();
+  const rng = mulberry32(20260517);
+  let attempts = 0;
+  while (out.length < count && attempts < count * 20) {
+    const gender: Gender = rng() < 0.5 ? "male" : "female";
+    const firsts = gender === "male" ? FIRST_NAMES_MALE : FIRST_NAMES_FEMALE;
+    const first  = firsts[Math.floor(rng() * firsts.length)];
+    const last   = FAMILY_NAMES[Math.floor(rng() * FAMILY_NAMES.length)];
+    const en = `${first.en} ${last.en}`;
+    if (used.has(en)) { attempts++; continue; }
+    used.add(en);
+    out.push({ en, ar: `${first.ar} ${last.ar}`, gender });
+    attempts++;
+  }
+  return out;
+}
+
+const PATIENT_COUNT = 150;
+const PATIENT_NAMES = generatePatientPool(PATIENT_COUNT);
 
 function saudiMobile(seed: number): string {
   // +9665X XXX XXXX — 5 is the mobile prefix; X is a digit.
@@ -368,7 +434,30 @@ function dobFor(age: number, seed: number): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-export const SEED_PATIENTS: Patient[] = PATIENT_NAMES.slice(0, 50).map((p, i) => {
+/** Random YYYY-MM-DD within the last `windowDays` days (anchored on today). */
+function pastDateString(seed: number, windowDays: number): string {
+  const r = mulberry32(seed ^ 0xa11ce);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const offset = Math.floor(r() * windowDays);
+  const d = new Date(today);
+  d.setDate(today.getDate() - offset);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+/** Pick a registration source with a ~40 / 35 / 25 split that reflects how a
+ * real clinic intake might break down. */
+function registrationSourceFor(seed: number): RegistrationSource {
+  const r = mulberry32(seed ^ 0xb0b);
+  const x = r();
+  if (x < 0.40) return "walk-in";
+  if (x < 0.75) return "call_center";
+  return "live_agent";
+}
+
+export const SEED_PATIENTS: Patient[] = PATIENT_NAMES.map((p, i) => {
   const seed = 1000 + i * 7;
   const r = mulberry32(seed);
   const city = SAUDI_CITIES[Math.floor(r() * SAUDI_CITIES.length)];
@@ -385,6 +474,9 @@ export const SEED_PATIENTS: Patient[] = PATIENT_NAMES.slice(0, 50).map((p, i) =>
     email: `${handle}@example.sa`,
     city: city.en,
     city_ar: city.ar,
+    // Registered some time in the past ~3 years.
+    registration_date: pastDateString(seed, 365 * 3),
+    registration_source: registrationSourceFor(seed),
     notes: "",
   };
 });
