@@ -15,6 +15,7 @@ function PersonaPage() {
       description={t("personaDesc")}
       storageKey="persona"
       defaultText={DEFAULT_PERSONA}
+      showLivePreview={false}
     />
   );
 }

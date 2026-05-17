@@ -17,9 +17,15 @@ interface Props {
   description: string;
   storageKey: string;
   defaultText: string;
+  /** Show the auto-generated live-state block as its own collapsible
+   * section. Defaults to true. The Knowledge Base page keeps it on
+   * (live data is "facts" and belongs here); the Persona page turns it
+   * off so the same block isn't duplicated across the two pages — it
+   * still ends up embedded inside the full compiled prompt either way. */
+  showLivePreview?: boolean;
 }
 
-export function PromptEditor({ heading, description, storageKey, defaultText }: Props) {
+export function PromptEditor({ heading, description, storageKey, defaultText, showLivePreview = true }: Props) {
   const { t, lang } = useApp();
   const { value: saved, set: save, reset } = useStoredText(storageKey, defaultText);
   // Local draft so the textarea is responsive without flushing to storage on every keystroke.
@@ -87,15 +93,20 @@ export function PromptEditor({ heading, description, storageKey, defaultText }: 
         </div>
       </Collapsible>
 
-      {/* Live state preview */}
-      <Collapsible
-        title={t("liveStatePreview")}
-        meta={`${liveBlock.length.toLocaleString()} chars · auto`}
-      >
-        <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap p-4 font-mono text-[12px] leading-relaxed text-muted-foreground" dir="auto">
+      {/* Live state preview — only shown when this page is the canonical
+       * home for live data (Knowledge Base). Persona omits it to avoid
+       * duplicating the same block; the live data is still embedded in
+       * the Full compiled prompt below. */}
+      {showLivePreview && (
+        <Collapsible
+          title={t("liveStatePreview")}
+          meta={`${liveBlock.length.toLocaleString()} chars · auto`}
+        >
+          <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap p-4 font-mono text-[12px] leading-relaxed text-muted-foreground" dir="auto">
 {liveBlock}
-        </pre>
-      </Collapsible>
+          </pre>
+        </Collapsible>
+      )}
 
       {/* Full compiled prompt */}
       <Collapsible

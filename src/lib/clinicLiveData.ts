@@ -268,28 +268,59 @@ export function buildLiveStateBlock({
   }
   lines.push("");
 
-  // --- Today's schedule -----------------------------------------------------
-  lines.push(`## Today's schedule (${todayYmd})`);
+  // --- Today's schedule (totals) -------------------------------------------
   const todayTotals = perDayCounts(todayYmd, clinics, appointments, overrides);
+  lines.push(`## Today's totals (${todayYmd})`);
   lines.push(`Across all clinics — slots ${todayTotals.totalSlots} · booked ${todayTotals.booked} · blocked ${todayTotals.blocked} · free ${todayTotals.free}`);
-  for (const c of clinics) {
-    const breakdown = perClinicDay(c, todayYmd, appointments, overrides);
-    if (breakdown.totalSlots === 0) {
-      lines.push(`- ${localized(c.name, c.name_ar, lang)}: closed today`);
-      continue;
-    }
-    const previewFree = breakdown.freeSlots.slice(0, 4).join(", ") || "(none)";
-    lines.push(
-      `- ${localized(c.name, c.name_ar, lang)}: ` +
-      `${breakdown.free} free of ${breakdown.totalSlots}` +
-      (breakdown.blocked > 0 ? ` (${breakdown.blocked} blocked)` : "") +
-      ` — first free: ${previewFree}`,
-    );
-  }
   lines.push("");
 
-  // --- This week summary ----------------------------------------------------
-  lines.push("## This week summary");
+  // --- Per-clinic free slots, today + next 6 days --------------------------
+  // The agent uses this to answer "do you have anything Tuesday at 3pm?"
+  // type questions. We list the actual slot start times so it can quote
+  // them verbatim. Each day is capped at MAX_LIST_PER_DAY to keep token
+  // usage bounded; if there are more, we append "+N more".
+  const HORIZON_DAYS = 7;
+  const MAX_LIST_PER_DAY = 6;
+  const horizon: string[] = [];
+  {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    for (let i = 0; i < HORIZON_DAYS; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      horizon.push(ymd(d));
+    }
+  }
+
+  lines.push(`## Free slots — today and next ${HORIZON_DAYS - 1} days (per clinic)`);
+  for (const c of clinics) {
+    lines.push(`### ${localized(c.name, c.name_ar, lang)} — ${localized(c.specialty, c.specialty_ar, lang)}`);
+    for (const date of horizon) {
+      const b = perClinicDay(c, date, appointments, overrides);
+      const dayLabel = humanDayLabel(date, lang);
+      if (b.totalSlots === 0) {
+        lines.push(`- ${dayLabel}: closed`);
+        continue;
+      }
+      if (b.free === 0) {
+        lines.push(
+          `- ${dayLabel}: FULL (${b.booked} booked${b.blocked > 0 ? `, ${b.blocked} blocked` : ""})`,
+        );
+        continue;
+      }
+      const shown = b.freeSlots.slice(0, MAX_LIST_PER_DAY).join(", ");
+      const extra = b.freeSlots.length > MAX_LIST_PER_DAY
+        ? ` +${b.freeSlots.length - MAX_LIST_PER_DAY} more`
+        : "";
+      lines.push(
+        `- ${dayLabel}: ${shown}${extra}  (${b.free} of ${b.totalSlots} free)`,
+      );
+    }
+    lines.push("");
+  }
+
+  // --- This week summary (kept as a quick-reference totals table) ----------
+  lines.push("## This week totals (per clinic)");
   for (const c of clinics) {
     let wkBooked = 0;
     let wkBlocked = 0;
@@ -331,6 +362,27 @@ function ymd(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+const DAY_NAMES_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAY_NAMES_AR = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+
+/** "Today (Tue 17 May)" / "Tomorrow (Wed 18 May)" / "Thu 19 May" — gives
+ * the agent both a relative anchor and the absolute date so it can quote
+ * either to the caller. */
+function humanDayLabel(date: string, lang: Lang): string {
+  const [y, m, d] = date.split("-").map((n) => parseInt(n, 10));
+  const dt = new Date(y, m - 1, d);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((dt.getTime() - today.getTime()) / 86_400_000);
+  const dayName = (lang === "ar" ? DAY_NAMES_AR : DAY_NAMES_EN)[dt.getDay()];
+  const monthDay = dt.toLocaleDateString(lang === "ar" ? "ar-EG" : undefined, {
+    day: "numeric", month: "short",
+  });
+  const abs = `${dayName} ${monthDay}`;
+  if (diffDays === 0) return `Today (${abs})`;
+  if (diffDays === 1) return `Tomorrow (${abs})`;
+  return abs;
 }
 
 interface DayCounts {
