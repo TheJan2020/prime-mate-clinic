@@ -579,3 +579,35 @@ export function weekdayOf(ymd: string): number {
   const [y, m, d] = ymd.split("-").map((n) => parseInt(n, 10));
   return new Date(y, m - 1, d).getDay();
 }
+
+/** Returns the set of slot start-times (HH:MM) that are already occupied by
+ * scheduled/completed appointments for one department on one date. Cancelled
+ * and no-show appointments don't reserve the slot. Multi-slot appointments
+ * (duration_min > SLOT_MINUTES) mark every slot they cover.
+ *
+ * @param excludeId  if set, the appointment with this id is not counted as
+ *                   booking itself — used when editing an existing appointment
+ *                   so its own current slot remains selectable.
+ */
+export function bookedSlotsForDate(
+  appointments: Appointment[],
+  date: string,
+  departmentId: string | null,
+  excludeId?: string | null,
+): Set<string> {
+  const out = new Set<string>();
+  for (const a of appointments) {
+    if (excludeId && a.id === excludeId) continue;
+    if (a.status === "cancelled" || a.status === "no_show") continue;
+    if (departmentId && a.department_id !== departmentId) continue;
+    if (!a.scheduled_at || a.scheduled_at.slice(0, 10) !== date) continue;
+    const startMin = timeToMinutes(a.scheduled_at.slice(11, 16));
+    const duration = a.duration_min || SLOT_MINUTES;
+    const endMin = startMin + duration;
+    const firstSlotStart = Math.floor(startMin / SLOT_MINUTES) * SLOT_MINUTES;
+    for (let m = firstSlotStart; m < endMin; m += SLOT_MINUTES) {
+      out.add(minutesToTime(m));
+    }
+  }
+  return out;
+}

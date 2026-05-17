@@ -25,7 +25,9 @@ import { useApp } from "@/lib/i18n";
 import {
   SEED_DEPARTMENTS, SEED_PROVIDERS, SEED_SLOT_OVERRIDES, useDemoCollection,
   nextId, localized, DEFAULT_WORKING_HOURS, weekDates,
+  getSeedAppointments,
   type Department, type Provider, type ClinicSlotOverride, type DayHours,
+  type Appointment,
 } from "@/lib/demoStore";
 
 export const Route = createFileRoute("/_app/clinics")({
@@ -40,6 +42,8 @@ function ClinicsPage() {
     useDemoCollection<Provider>("providers", SEED_PROVIDERS);
   const { items: slotOverrides, setAll: setSlotOverrides } =
     useDemoCollection<ClinicSlotOverride>("slot_overrides", SEED_SLOT_OVERRIDES);
+  const { items: appointments } =
+    useDemoCollection<Appointment>("appointments", getSeedAppointments);
 
   const providerById = useMemo(() => {
     const map = new Map<string, Provider>();
@@ -343,6 +347,7 @@ function ClinicsPage() {
       <ScheduleDialog
         department={scheduling}
         overrides={slotOverrides}
+        appointments={appointments}
         onClose={() => setScheduling(null)}
         onSave={handleScheduleSave}
       />

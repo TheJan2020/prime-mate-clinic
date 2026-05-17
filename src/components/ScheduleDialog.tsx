@@ -11,8 +11,10 @@ import {
 } from "@/components/ui/dialog";
 import { useApp } from "@/lib/i18n";
 import {
+  bookedSlotsForDate,
   DEFAULT_WORKING_HOURS, isBreakSlot, localized, slotsForDay,
-  weekDates, weekdayOf, type ClinicSlotOverride, type DayHours,
+  weekDates, weekdayOf,
+  type Appointment, type ClinicSlotOverride, type DayHours,
   type Department,
 } from "@/lib/demoStore";
 
@@ -21,6 +23,9 @@ interface Props {
   department: Department | null;
   /** Snapshot of all overrides for this department (parent owns the array). */
   overrides: ClinicSlotOverride[];
+  /** Full appointments list — used to mark already-booked slots as
+   * non-blockable. */
+  appointments: Appointment[];
   onClose: () => void;
   /** Called with the updated default hours + the new override list for *this
    * department's current week*. Parent merges with the global overrides
@@ -35,7 +40,7 @@ const DAY_KEYS = [
   "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
 ] as const;
 
-export function ScheduleDialog({ department, overrides, onClose, onSave }: Props) {
+export function ScheduleDialog({ department, overrides, appointments, onClose, onSave }: Props) {
   const { t, lang } = useApp();
   const open = department !== null;
 
@@ -91,10 +96,16 @@ export function ScheduleDialog({ department, overrides, onClose, onSave }: Props
   };
 
   const blockAllForDate = (date: string) => {
-    const slots = slotsForDay(hours[weekdayOf(date)]);
+    if (!department) return;
+    const day = hours[weekdayOf(date)];
+    const slots = slotsForDay(day);
+    const booked = bookedSlotsForDate(appointments, date, department.id);
     setWeekBlocks((prev) => {
       const next = new Map(prev);
-      next.set(date, new Set(slots.filter((s) => !isBreakSlot(s, hours[weekdayOf(date)]))));
+      next.set(
+        date,
+        new Set(slots.filter((s) => !isBreakSlot(s, day) && !booked.has(s))),
+      );
       return next;
     });
   };
@@ -235,6 +246,7 @@ export function ScheduleDialog({ department, overrides, onClose, onSave }: Props
                 const day = hours[idx];
                 const slots = slotsForDay(day);
                 const blocks = weekBlocks.get(date) ?? new Set();
+                const booked = bookedSlotsForDate(appointments, date, department.id);
                 const isPast = date < todayYmd;
                 const isToday = date === todayYmd;
                 return (
@@ -262,27 +274,38 @@ export function ScheduleDialog({ department, overrides, onClose, onSave }: Props
                         <div className="flex flex-col gap-0.5">
                           {slots.map((slot) => {
                             const isBreak = isBreakSlot(slot, day);
+                            const isBooked = booked.has(slot);
                             const isBlocked = blocks.has(slot);
-                            const disabled = isPast || isBreak;
+                            // Booked overrides Blocked visually — a real
+                            // appointment is more important than an intent
+                            // to block. Booked slots can never be toggled.
+                            const disabled = isPast || isBreak || isBooked;
                             const base = "rounded px-1 py-0.5 text-[10px] font-mono text-center transition-colors";
-                            const cls = isBreak
-                              ? `${base} bg-muted/40 text-muted-foreground`
-                              : isBlocked
-                                ? `${base} bg-destructive/80 text-destructive-foreground line-through`
-                                : isPast
-                                  ? `${base} bg-muted/30 text-muted-foreground`
-                                  : `${base} bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-400 cursor-pointer`;
+                            let cls: string;
+                            let title: string;
+                            if (isBreak) {
+                              cls = `${base} bg-muted/40 text-muted-foreground`;
+                              title = t("breakSlot");
+                            } else if (isBooked) {
+                              cls = `${base} bg-sky-500/80 text-white cursor-not-allowed`;
+                              title = t("booked");
+                            } else if (isBlocked) {
+                              cls = `${base} bg-destructive/80 text-destructive-foreground line-through`;
+                              title = t("blocked");
+                            } else if (isPast) {
+                              cls = `${base} bg-muted/30 text-muted-foreground`;
+                              title = t("available");
+                            } else {
+                              cls = `${base} bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-400 cursor-pointer`;
+                              title = t("available");
+                            }
                             return (
                               <button
                                 key={slot}
                                 disabled={disabled}
                                 onClick={() => !disabled && toggleSlot(date, slot)}
                                 className={cls}
-                                title={
-                                  isBreak ? t("breakSlot")
-                                  : isBlocked ? t("blocked")
-                                  : t("available")
-                                }
+                                title={title}
                               >
                                 {slot}
                               </button>

@@ -22,10 +22,13 @@ import {
 } from "@/components/ui/select";
 import { useApp } from "@/lib/i18n";
 import {
-  SEED_DEPARTMENTS, SEED_PROVIDERS, SEED_PATIENTS, getSeedAppointments,
+  SEED_DEPARTMENTS, SEED_PROVIDERS, SEED_PATIENTS, SEED_SLOT_OVERRIDES,
+  getSeedAppointments,
   useDemoCollection, nextId, localized,
+  DEFAULT_WORKING_HOURS, slotsForDay, isBreakSlot, weekdayOf,
+  bookedSlotsForDate, timeToMinutes,
   type Appointment, type AppointmentStatus,
-  type Department, type Provider, type Patient,
+  type Department, type Provider, type Patient, type ClinicSlotOverride,
 } from "@/lib/demoStore";
 
 export const Route = createFileRoute("/_app/appointments")({
@@ -65,6 +68,8 @@ function AppointmentsPage() {
     useDemoCollection<Provider>("providers", SEED_PROVIDERS);
   const { items: patients } =
     useDemoCollection<Patient>("patients", SEED_PATIENTS);
+  const { items: slotOverrides } =
+    useDemoCollection<ClinicSlotOverride>("slot_overrides", SEED_SLOT_OVERRIDES);
 
   const deptById = useMemo(() => {
     const map = new Map<string, Department>();
@@ -425,11 +430,17 @@ function AppointmentsPage() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label={t("dateTime")}>
+              <Field label={t("filterDate")}>
                 <Input
-                  type="datetime-local"
-                  value={toLocalDatetimeInput(draft.scheduled_at)}
-                  onChange={(e) => setDraft({ ...draft, scheduled_at: fromLocalDatetimeInput(e.target.value) })}
+                  type="date"
+                  value={draft.scheduled_at.slice(0, 10)}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    // Keep the existing time-of-day if any; otherwise clear it
+                    // so the user is forced to pick a slot below.
+                    const time = draft.scheduled_at.slice(11, 16) || "00:00";
+                    setDraft({ ...draft, scheduled_at: `${e.target.value}T${time}:00` });
+                  }}
                 />
               </Field>
               <Field label={t("durationMin")}>
@@ -439,6 +450,21 @@ function AppointmentsPage() {
                   step={5}
                   value={draft.duration_min}
                   onChange={(e) => setDraft({ ...draft, duration_min: Math.max(5, parseInt(e.target.value, 10) || 5) })}
+                />
+              </Field>
+              <Field label={t("pickSlot")} className="col-span-2">
+                <SlotPicker
+                  date={draft.scheduled_at.slice(0, 10)}
+                  departmentId={draft.department_id}
+                  selectedTime={draft.scheduled_at.slice(11, 16)}
+                  appointments={items}
+                  overrides={slotOverrides}
+                  department={draft.department_id ? deptById.get(draft.department_id) ?? null : null}
+                  excludeAppointmentId={items.some((x) => x.id === draft.id) ? draft.id : null}
+                  onPick={(time) => {
+                    const date = draft.scheduled_at.slice(0, 10);
+                    setDraft({ ...draft, scheduled_at: `${date}T${time}:00` });
+                  }}
                 />
               </Field>
               <Field label={t("notes")} className="col-span-2">
@@ -452,7 +478,7 @@ function AppointmentsPage() {
           )}
           <DialogFooter>
             <Button variant="ghost" onClick={() => { setEditing(null); setDraft(null); }}>{t("cancel")}</Button>
-            <Button onClick={saveDraft} disabled={!draft || !draft.patient_name.trim()}>{t("save")}</Button>
+            <Button onClick={saveDraft} disabled={!canSaveDraft(draft, items, slotOverrides, departments)}>{t("save")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -501,19 +527,179 @@ function statusLabel(s: AppointmentStatus, t: (k: never) => string): string {
   }
 }
 
-function toLocalDatetimeInput(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+// True only when the draft has a name, a date+time, and the chosen slot
+// is currently free (not blocked, not booked by another appointment, not
+// in a closed/break slot for that day).
+function canSaveDraft(
+  draft: Appointment | null,
+  items: Appointment[],
+  overrides: ClinicSlotOverride[],
+  departments: Department[],
+): boolean {
+  if (!draft) return false;
+  if (!draft.patient_name.trim()) return false;
+  if (!draft.department_id) return false;
+  const date = draft.scheduled_at.slice(0, 10);
+  const time = draft.scheduled_at.slice(11, 16);
+  if (!date || !time) return false;
+  const dept = departments.find((d) => d.id === draft.department_id);
+  if (!dept) return false;
+  const day = (dept.working_hours ?? DEFAULT_WORKING_HOURS)[weekdayOf(date)];
+  if (!day || !day.open) return false;
+  if (isBreakSlot(time, day)) return false;
+  // Must be within open window.
+  const slotMin = timeToMinutes(time);
+  const openMin = timeToMinutes(day.open_time);
+  const closeMin = timeToMinutes(day.close_time);
+  if (slotMin < openMin || slotMin >= closeMin) return false;
+  // Not blocked.
+  const blocked = overrides
+    .filter((o) => o.department_id === draft.department_id && o.date === date)
+    .flatMap((o) => o.blocked_slots);
+  if (blocked.includes(time)) return false;
+  // Not booked by a different appointment.
+  const booked = bookedSlotsForDate(items, date, draft.department_id, draft.id);
+  if (booked.has(time)) return false;
+  return true;
 }
 
-function fromLocalDatetimeInput(value: string): string {
-  if (!value) return new Date().toISOString();
-  // Treat the value as local time.
-  const [date, time] = value.split("T");
-  const [y, m, d] = date.split("-").map((n) => parseInt(n, 10));
-  const [hh, mm] = time.split(":").map((n) => parseInt(n, 10));
-  return new Date(y, m - 1, d, hh, mm, 0, 0).toISOString();
+// ---------- SlotPicker --------------------------------------------------
+// Replaces the free-form datetime input. Shows every 30-min slot in the
+// selected department's working hours for the picked date, colored by
+// status (free / break / blocked / booked / past / selected). Only free
+// slots are clickable.
+
+function SlotPicker({
+  date, departmentId, selectedTime, appointments, overrides, department,
+  excludeAppointmentId, onPick,
+}: {
+  date: string;
+  departmentId: string | null;
+  selectedTime: string;
+  appointments: Appointment[];
+  overrides: ClinicSlotOverride[];
+  department: Department | null;
+  excludeAppointmentId: string | null;
+  onPick: (time: string) => void;
+}) {
+  const { t } = useApp();
+
+  if (!departmentId || !department) {
+    return <SlotHint>{t("pickDepartmentFirst")}</SlotHint>;
+  }
+  if (!date) {
+    return <SlotHint>{t("pickDateFirst")}</SlotHint>;
+  }
+
+  const day = (department.working_hours ?? DEFAULT_WORKING_HOURS)[weekdayOf(date)];
+  if (!day || !day.open) {
+    return <SlotHint>{t("closedThatDay")}</SlotHint>;
+  }
+
+  const slots = slotsForDay(day);
+  const booked = bookedSlotsForDate(appointments, date, departmentId, excludeAppointmentId);
+  const blocked = new Set(
+    overrides
+      .filter((o) => o.department_id === departmentId && o.date === date)
+      .flatMap((o) => o.blocked_slots),
+  );
+
+  const todayYmd = (() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
+  })();
+  const nowMin = (() => {
+    const d = new Date();
+    return d.getHours() * 60 + d.getMinutes();
+  })();
+
+  const hasFree = slots.some((s) => {
+    if (isBreakSlot(s, day)) return false;
+    if (booked.has(s) || blocked.has(s)) return false;
+    if (date < todayYmd) return false;
+    if (date === todayYmd && timeToMinutes(s) < nowMin) return false;
+    return true;
+  });
+
+  return (
+    <div>
+      <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-8">
+        {slots.map((slot) => {
+          const isBreak = isBreakSlot(slot, day);
+          const isBooked = booked.has(slot);
+          const isBlocked = blocked.has(slot);
+          const isPast =
+            date < todayYmd ||
+            (date === todayYmd && timeToMinutes(slot) < nowMin);
+          const isSelected = slot === selectedTime;
+          const disabled = isBreak || isBooked || isBlocked || isPast;
+
+          const base = "rounded-md px-2 py-1.5 text-xs font-mono text-center transition-colors border";
+          let cls: string;
+          let title: string;
+          if (isSelected) {
+            cls = `${base} border-primary bg-primary text-primary-foreground`;
+            title = t("selected");
+          } else if (isBreak) {
+            cls = `${base} border-transparent bg-muted/40 text-muted-foreground cursor-not-allowed`;
+            title = t("breakSlot");
+          } else if (isBooked) {
+            cls = `${base} border-transparent bg-sky-500/80 text-white cursor-not-allowed`;
+            title = t("booked");
+          } else if (isBlocked) {
+            cls = `${base} border-transparent bg-destructive/80 text-destructive-foreground line-through cursor-not-allowed`;
+            title = t("blocked");
+          } else if (isPast) {
+            cls = `${base} border-transparent bg-muted/30 text-muted-foreground cursor-not-allowed`;
+            title = t("past");
+          } else {
+            cls = `${base} border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-400 cursor-pointer`;
+            title = t("available");
+          }
+          return (
+            <button
+              key={slot}
+              type="button"
+              disabled={disabled}
+              onClick={() => !disabled && onPick(slot)}
+              className={cls}
+              title={title}
+            >
+              {slot}
+            </button>
+          );
+        })}
+      </div>
+      {!hasFree && !selectedTime && (
+        <SlotHint className="mt-2">{t("noFreeSlots")}</SlotHint>
+      )}
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+        <span>{t("legend")}:</span>
+        <SlotLegendChip cls="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border border-emerald-500/40">{t("available")}</SlotLegendChip>
+        <SlotLegendChip cls="bg-primary text-primary-foreground">{t("selected")}</SlotLegendChip>
+        <SlotLegendChip cls="bg-sky-500/80 text-white">{t("bookedShort")}</SlotLegendChip>
+        <SlotLegendChip cls="bg-destructive/80 text-destructive-foreground">{t("blockedShort")}</SlotLegendChip>
+        <SlotLegendChip cls="bg-muted/40 text-muted-foreground">{t("breakShort")}</SlotLegendChip>
+      </div>
+    </div>
+  );
+}
+
+function SlotHint({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div className={`rounded-md border border-dashed border-border bg-muted/30 px-3 py-4 text-center text-xs text-muted-foreground ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function SlotLegendChip({ cls, children }: { cls: string; children: React.ReactNode }) {
+  return (
+    <span className={`inline-flex items-center rounded px-1.5 py-0.5 ${cls}`}>{children}</span>
+  );
 }
 
 function FilterPill({
