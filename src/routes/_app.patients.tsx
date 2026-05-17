@@ -422,8 +422,8 @@ function SourcePill({ source }: { source: RegistrationSource }) {
   const { t } = useApp();
   const cls: Record<RegistrationSource, string> = {
     "walk-in":     "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
-    "call_center": "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400",
-    "live_agent":  "bg-violet-500/15 text-violet-600 dark:text-violet-400",
+    "call_center": "bg-orange-500/20 text-orange-700 dark:text-orange-300",
+    "live_agent":  "bg-violet-500/20 text-violet-700 dark:text-violet-300",
   };
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls[source]}`}>
