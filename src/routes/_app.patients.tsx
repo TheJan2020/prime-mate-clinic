@@ -23,6 +23,7 @@ import {
 import { useApp } from "@/lib/i18n";
 import {
   SEED_PATIENTS, useDemoCollection, nextId, localized,
+  isValidFileNumber, suggestFileNumber,
   type Patient, type Gender,
 } from "@/lib/demoStore";
 
@@ -57,6 +58,7 @@ function PatientsPage() {
         p.name.toLowerCase().includes(q) ||
         p.name_ar.includes(search.trim()) ||
         p.id.toLowerCase().includes(q) ||
+        (p.file_number ?? "").toLowerCase().includes(q) ||
         p.phone.toLowerCase().includes(q) ||
         p.email.toLowerCase().includes(q) ||
         p.city.toLowerCase().includes(q) ||
@@ -81,6 +83,7 @@ function PatientsPage() {
   const openAdd = () => {
     const blank: Patient = {
       id: nextId("PAT", items),
+      file_number: suggestFileNumber(items),
       name: "",
       name_ar: "",
       gender: "male",
@@ -185,6 +188,7 @@ function PatientsPage() {
             <thead className="bg-muted/30 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-4 py-2 text-start">ID</th>
+                <th className="px-4 py-2 text-start">{t("fileNumber")}</th>
                 <th className="px-4 py-2 text-start">{t("name")}</th>
                 <th className="px-4 py-2 text-start">{t("gender")}</th>
                 <th className="px-4 py-2 text-start">{t("age")}</th>
@@ -196,11 +200,12 @@ function PatientsPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {filtered.length === 0 && (
-                <tr><td colSpan={8} className="px-4 py-6 text-center text-muted-foreground">{t("noResults")}</td></tr>
+                <tr><td colSpan={9} className="px-4 py-6 text-center text-muted-foreground">{t("noResults")}</td></tr>
               )}
               {filtered.map((p) => (
                 <tr key={p.id}>
                   <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{p.id}</td>
+                  <td className="px-4 py-2 font-mono text-xs font-medium text-foreground" dir="ltr">{p.file_number || "—"}</td>
                   <td className="px-4 py-2 font-medium text-foreground">{localized(p.name, p.name_ar, lang)}</td>
                   <td className="px-4 py-2"><GenderPill gender={p.gender} /></td>
                   <td className="px-4 py-2 text-muted-foreground">{ageFromDob(p.date_of_birth)}</td>
@@ -244,6 +249,28 @@ function PatientsPage() {
                   </SelectContent>
                 </Select>
               </Field>
+              <Field label={t("fileNumber")} className="col-span-2">
+                <Input
+                  dir="ltr"
+                  value={draft.file_number ?? ""}
+                  onChange={(e) => setDraft({ ...draft, file_number: e.target.value.toUpperCase() })}
+                  placeholder="A123456"
+                  maxLength={7}
+                  className={
+                    draft.file_number && !isValidFileNumber(draft.file_number)
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : ""
+                  }
+                />
+                <p className={`mt-1 text-[11px] ${
+                  draft.file_number && !isValidFileNumber(draft.file_number)
+                    ? "text-destructive" : "text-muted-foreground"
+                }`}>
+                  {draft.file_number && !isValidFileNumber(draft.file_number)
+                    ? t("fileNumberInvalid")
+                    : t("fileNumberFormat")}
+                </p>
+              </Field>
               <Field label={t("name")}>
                 <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
               </Field>
@@ -272,7 +299,12 @@ function PatientsPage() {
           )}
           <DialogFooter>
             <Button variant="ghost" onClick={() => { setEditing(null); setDraft(null); }}>{t("cancel")}</Button>
-            <Button onClick={saveDraft} disabled={!draft || !draft.name.trim()}>{t("save")}</Button>
+            <Button
+              onClick={saveDraft}
+              disabled={!draft || !draft.name.trim() || !isValidFileNumber(draft.file_number ?? "")}
+            >
+              {t("save")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

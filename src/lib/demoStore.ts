@@ -206,6 +206,8 @@ export type Gender = "male" | "female";
 
 export type Patient = {
   id: string;
+  /** Clinic file number — one letter A/B/C then six digits, first digit 1-9. */
+  file_number: string;
   name: string;
   name_ar: string;
   gender: Gender;
@@ -216,6 +218,33 @@ export type Patient = {
   city_ar: string;
   notes: string;
 };
+
+export const FILE_NUMBER_PATTERN = /^[A-C][1-9][0-9]{5}$/;
+
+export function isValidFileNumber(s: string): boolean {
+  return FILE_NUMBER_PATTERN.test(s);
+}
+
+/** Generate a syntactically valid file number from a numeric seed. */
+function fileNumberFor(seed: number): string {
+  const r = mulberry32(seed ^ 0xfeed);
+  const letter = ["A", "B", "C"][Math.floor(r() * 3)];
+  const first = 1 + Math.floor(r() * 9);              // 1-9
+  const rest  = Math.floor(r() * 100000).toString().padStart(5, "0");
+  return `${letter}${first}${rest}`;
+}
+
+/** Build the next plausible file number for a brand-new patient — keeps the
+ * letter cycling through A/B/C and avoids colliding with what's already in
+ * the collection. */
+export function suggestFileNumber(existing: Patient[]): string {
+  const used = new Set(existing.map((p) => p.file_number));
+  for (let attempt = 0; attempt < 10000; attempt++) {
+    const candidate = fileNumberFor(Date.now() + attempt);
+    if (!used.has(candidate)) return candidate;
+  }
+  return fileNumberFor(Date.now());
+}
 
 // ============================================================================
 // Seed data
@@ -347,6 +376,7 @@ export const SEED_PATIENTS: Patient[] = PATIENT_NAMES.slice(0, 50).map((p, i) =>
   const handle = p.en.toLowerCase().replace(/[^a-z]+/g, ".").replace(/^\.+|\.+$/g, "");
   return {
     id: `PAT-${String(i + 1).padStart(4, "0")}`,
+    file_number: fileNumberFor(seed + i),
     name: p.en,
     name_ar: p.ar,
     gender: p.gender,
