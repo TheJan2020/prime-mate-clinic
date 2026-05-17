@@ -111,6 +111,41 @@ function DashboardPage() {
           patient_id:     null,
           appointment_id: apt.id,
         }, ...prev]);
+      } else if (ev.kind === "appointment_cancelled" && ev.appointment) {
+        const apt = ev.appointment;
+        setAppointments((prev) =>
+          prev.map((a) => (a.id === apt.id ? { ...a, ...apt } : a)),
+        );
+        setActivity((prev) => [{
+          id:             nextId("LAE", prev),
+          ts:             new Date().toISOString(),
+          call_id:        ev.call_id,
+          caller_name:    apt.patient_name || "Unknown",
+          caller_phone:   apt.patient_phone || "",
+          action:         "cancel_appointment",
+          summary:        `Cancelled appointment ${apt.id} (was ${apt.scheduled_at?.slice(0, 16).replace("T", " ")})`,
+          summary_ar:     `ألغى الموعد ${apt.id} (كان ${apt.scheduled_at?.slice(0, 16).replace("T", " ")})`,
+          patient_id:     null,
+          appointment_id: apt.id,
+        }, ...prev]);
+      } else if (ev.kind === "appointment_rescheduled" && ev.appointment) {
+        const apt = ev.appointment;
+        const prevAt = (ev as any).previous_scheduled_at as string | undefined;
+        setAppointments((prev) =>
+          prev.map((a) => (a.id === apt.id ? { ...a, ...apt } : a)),
+        );
+        setActivity((prev) => [{
+          id:             nextId("LAE", prev),
+          ts:             new Date().toISOString(),
+          call_id:        ev.call_id,
+          caller_name:    apt.patient_name || "Unknown",
+          caller_phone:   apt.patient_phone || "",
+          action:         "reschedule_appointment",
+          summary:        `Rescheduled ${apt.id}: ${prevAt?.slice(0, 16).replace("T", " ") ?? "?"} → ${apt.scheduled_at?.slice(0, 16).replace("T", " ")}`,
+          summary_ar:     `أعاد جدولة ${apt.id}: ${prevAt?.slice(0, 16).replace("T", " ") ?? "؟"} → ${apt.scheduled_at?.slice(0, 16).replace("T", " ")}`,
+          patient_id:     null,
+          appointment_id: apt.id,
+        }, ...prev]);
       }
       consumeMutation(ev);
     }

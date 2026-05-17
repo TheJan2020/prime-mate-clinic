@@ -24,10 +24,17 @@ export type LiveCall = {
 
 export type ToolMutationEvent = {
   /** What changed — drives the SPA-side localStorage sync. */
-  kind: "patient_created" | "appointment_created";
+  kind:
+    | "patient_created"
+    | "appointment_created"
+    | "appointment_cancelled"
+    | "appointment_rescheduled";
   call_id: string;
   patient?: any;        // shape mirrors clinic SPA Patient
   appointment?: any;    // shape mirrors clinic SPA Appointment
+  /** Reschedule events also carry the prior scheduled_at string so the
+   *  activity feed can show the before/after time. */
+  previous_scheduled_at?: string;
 };
 
 export type ToolResultEvent = {
@@ -224,10 +231,11 @@ function applyEvent(raw: unknown) {
       // (the Dashboard mirrors these into localStorage so the SPA's
       // Patients / Appointments pages reflect what the agent did).
       const event: ToolMutationEvent = {
-        kind:        m.kind,
-        call_id:     m.call_id,
-        patient:     m.patient,
-        appointment: m.appointment,
+        kind:                  m.kind,
+        call_id:               m.call_id,
+        patient:               m.patient,
+        appointment:           m.appointment,
+        previous_scheduled_at: m.previous_scheduled_at,
       };
       setState((s) => ({
         ...s,
