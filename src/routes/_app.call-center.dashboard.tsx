@@ -323,6 +323,44 @@ function DashboardPage() {
         </div>
       </div>
 
+      {/* Tool errors — surfaces silent failures (e.g. agent said
+       *  "booked" but create_appointment returned an error). */}
+      {live.recentToolResults.some((r) => !r.ok) && (
+        <div className="rounded-xl border border-destructive/40 bg-destructive/5">
+          <div className="flex items-center gap-2 border-b border-destructive/30 px-4 py-2">
+            <CalendarX className="h-4 w-4 text-destructive" />
+            <h2 className="text-sm font-semibold text-destructive">
+              {t("toolErrorsHeading" as never)}
+            </h2>
+            <span className="ms-2 text-xs text-destructive/80">
+              {live.recentToolResults.filter((r) => !r.ok).length}
+            </span>
+          </div>
+          <ul className="divide-y divide-destructive/20">
+            {live.recentToolResults
+              .filter((r) => !r.ok)
+              .slice(0, 5)
+              .map((r, i) => (
+                <li key={`${r.ts}-${i}`} className="px-4 py-2 text-xs">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="font-mono font-semibold text-destructive">
+                      {r.name}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {new Date(r.ts * 1000).toLocaleTimeString(
+                        lang === "ar" ? "ar-EG" : undefined,
+                      )}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-foreground" dir="auto">
+                    {r.error || t("toolErrorUnknown" as never)}
+                  </div>
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+
       {/* Activity feed */}
       <div className="rounded-xl border border-border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">

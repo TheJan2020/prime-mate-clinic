@@ -30,6 +30,15 @@ export type ToolMutationEvent = {
   appointment?: any;    // shape mirrors clinic SPA Appointment
 };
 
+export type ToolResultEvent = {
+  call_id: string;
+  name: string;
+  ok: boolean;
+  args: Record<string, any>;
+  error: string | null;
+  ts: number;          // unix seconds, client-stamped
+};
+
 type State = {
   wsConnected: boolean;
   liveCalls: Record<string, LiveCall>;
@@ -37,6 +46,10 @@ type State = {
    * applies these to the SPA's localStorage so the Patients / Appointments
    * pages catch up to what the agent did on a call. */
   recentMutations: ToolMutationEvent[];
+  /** Last 20 tool results — surfaced on the Dashboard so a silent
+   * "the agent said it booked but the tool returned an error" failure
+   * is visible while the call is still live. */
+  recentToolResults: ToolResultEvent[];
 };
 
 type Listener = () => void;
@@ -45,6 +58,7 @@ let state: State = {
   wsConnected: false,
   liveCalls: {},
   recentMutations: [],
+  recentToolResults: [],
 };
 const listeners = new Set<Listener>();
 let ws: WebSocket | null = null;
@@ -162,6 +176,21 @@ function applyEvent(raw: unknown) {
           },
         };
       });
+      return;
+    }
+    case "tool_result": {
+      const event: ToolResultEvent = {
+        call_id: m.call_id,
+        name:    m.name,
+        ok:      !!m.ok,
+        args:    m.args || {},
+        error:   m.error || null,
+        ts:      Math.floor(Date.now() / 1000),
+      };
+      setState((s) => ({
+        ...s,
+        recentToolResults: [event, ...s.recentToolResults].slice(0, 20),
+      }));
       return;
     }
     case "tool_mutation": {
