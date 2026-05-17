@@ -264,12 +264,12 @@ export const SEED_PROVIDERS: Provider[] = [
 ];
 
 const SEED_DEPARTMENTS_RAW: Omit<Department, "working_hours">[] = [
-  { id: "DEP-001", name: "Al Noor Pediatrics",       name_ar: "عيادة النور لطب الأطفال",    specialty: "Pediatrics",      specialty_ar: "طب الأطفال",      location: "Riyadh · Olaya",      location_ar: "الرياض · العليا",   head_id: "PRV-001", active: true },
-  { id: "DEP-002", name: "Cairo Cardio Center",      name_ar: "مركز القاهرة للقلب",         specialty: "Cardiology",      specialty_ar: "طب القلب",         location: "Riyadh · Al Malaz",   location_ar: "الرياض · الملز",    head_id: "PRV-002", active: true },
-  { id: "DEP-003", name: "Smile Dental",             name_ar: "عيادة سمايل لطب الأسنان",    specialty: "Dentistry",       specialty_ar: "طب الأسنان",       location: "Jeddah · Al Hamra",   location_ar: "جدة · الحمراء",      head_id: "PRV-004", active: true },
-  { id: "DEP-004", name: "Wellness Family Clinic",   name_ar: "عيادة العافية للأسرة",       specialty: "Family Medicine", specialty_ar: "طب الأسرة",        location: "Dammam · Al Faisaliah", location_ar: "الدمام · الفيصلية", head_id: "PRV-005", active: true },
-  { id: "DEP-005", name: "SkinScience Dermatology",  name_ar: "سكين ساينس للأمراض الجلدية", specialty: "Dermatology",     specialty_ar: "الأمراض الجلدية",  location: "Riyadh · Al Yasmin",  location_ar: "الرياض · الياسمين",  head_id: "PRV-003", active: true },
-  { id: "DEP-006", name: "BoneCare Orthopedics",     name_ar: "بون كير لجراحة العظام",      specialty: "Orthopedics",     specialty_ar: "جراحة العظام",     location: "Jeddah · Al Salama",  location_ar: "جدة · السلامة",     head_id: "PRV-006", active: true },
+  { id: "DEP-001", name: "Al Noor Pediatrics",       name_ar: "عيادة النور لطب الأطفال",    specialty: "Pediatrics",      specialty_ar: "طب الأطفال",      location: "Main Center - GF - 12", location_ar: "المركز الرئيسي - ط.أ - 12", head_id: "PRV-001", active: true },
+  { id: "DEP-002", name: "Cairo Cardio Center",      name_ar: "مركز القاهرة للقلب",         specialty: "Cardiology",      specialty_ar: "طب القلب",         location: "Main Center - 1F - 28", location_ar: "المركز الرئيسي - ط.١ - 28", head_id: "PRV-002", active: true },
+  { id: "DEP-003", name: "Smile Dental",             name_ar: "عيادة سمايل لطب الأسنان",    specialty: "Dentistry",       specialty_ar: "طب الأسنان",       location: "Main Center - GF - 45", location_ar: "المركز الرئيسي - ط.أ - 45", head_id: "PRV-004", active: true },
+  { id: "DEP-004", name: "Wellness Family Clinic",   name_ar: "عيادة العافية للأسرة",       specialty: "Family Medicine", specialty_ar: "طب الأسرة",        location: "Main Center - 1F - 11", location_ar: "المركز الرئيسي - ط.١ - 11", head_id: "PRV-005", active: true },
+  { id: "DEP-005", name: "SkinScience Dermatology",  name_ar: "سكين ساينس للأمراض الجلدية", specialty: "Dermatology",     specialty_ar: "الأمراض الجلدية",  location: "Main Center - 1F - 32", location_ar: "المركز الرئيسي - ط.١ - 32", head_id: "PRV-003", active: true },
+  { id: "DEP-006", name: "BoneCare Orthopedics",     name_ar: "بون كير لجراحة العظام",      specialty: "Orthopedics",     specialty_ar: "جراحة العظام",     location: "Main Center - GF - 50", location_ar: "المركز الرئيسي - ط.أ - 50", head_id: "PRV-006", active: true },
 ];
 
 export const SEED_DEPARTMENTS: Department[] = SEED_DEPARTMENTS_RAW.map((d) => ({
