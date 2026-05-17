@@ -245,6 +245,9 @@ export type Patient = {
   id: string;
   /** Clinic file number — one letter A/B/C then six digits, first digit 1-9. */
   file_number: string;
+  /** National / residence ID. Saudi nationals start with `1`, foreign
+   * residents (Iqama) start with `2`. Always exactly 10 digits total. */
+  id_number: string;
   name: string;
   name_ar: string;
   gender: Gender;
@@ -257,6 +260,34 @@ export type Patient = {
   registration_source: RegistrationSource;
   notes: string;
 };
+
+export const ID_NUMBER_PATTERN = /^[12]\d{9}$/;
+
+export function isValidIdNumber(s: string): boolean {
+  return ID_NUMBER_PATTERN.test(s);
+}
+
+/** Generate a syntactically valid ID number from a numeric seed. ~80% Saudi
+ * (leading 1), 20% foreign (leading 2) so the demo mix looks realistic. */
+function idNumberFor(seed: number): string {
+  const r = mulberry32(seed ^ 0xbeef);
+  const leading = r() < 0.8 ? "1" : "2";
+  let rest = "";
+  for (let i = 0; i < 9; i++) {
+    rest += String(Math.floor(r() * 10));
+  }
+  return `${leading}${rest}`;
+}
+
+/** Suggest a non-colliding id_number for a brand-new patient. */
+export function suggestIdNumber(existing: Patient[]): string {
+  const used = new Set(existing.map((p) => p.id_number));
+  for (let attempt = 0; attempt < 1000; attempt++) {
+    const candidate = idNumberFor(Date.now() + attempt);
+    if (!used.has(candidate)) return candidate;
+  }
+  return idNumberFor(Date.now());
+}
 
 export const FILE_NUMBER_PATTERN = /^[A-C][1-9][0-9]{5}$/;
 
@@ -497,6 +528,7 @@ export const SEED_PATIENTS: Patient[] = PATIENT_NAMES.map((p, i) => {
   return {
     id: `PAT-${String(i + 1).padStart(4, "0")}`,
     file_number: fileNumberFor(seed + i),
+    id_number: idNumberFor(seed + i),
     name: p.en,
     name_ar: p.ar,
     gender: p.gender,

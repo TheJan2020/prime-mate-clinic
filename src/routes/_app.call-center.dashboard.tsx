@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   PhoneCall, UserPlus, CalendarPlus, CalendarX, CalendarClock,
   Trash2, Sparkles, Activity,
@@ -26,28 +26,25 @@ export const Route = createFileRoute("/_app/call-center/dashboard")({
   component: DashboardPage,
 });
 
-// Static demo content for active call + transcript — replaced by real WS
-// feed once the backend Live Agent is wired (see DEMOSITEMAP §6).
-const DEMO_CALL = {
-  id: "CALL-LIVE-001",
-  name_en: "Mohammed Al-Qahtani",
-  name_ar: "محمد القحطاني",
-  phone: "+966 50 234 5678",
-  started_iso: new Date(Date.now() - 134_000).toISOString(),
-  status: "inCall" as "inCall" | "wrappingUp",
+// ---- Live call shape -----------------------------------------------------
+// The backend's /agent/ws WebSocket pushes events in this shape (see
+// backend/app/demos/clinic/router.py → agent_ws + live_agent.py
+// CallSession._broadcast). The Dashboard re-shapes them into rows.
+type LiveCall = {
+  call_id: string;
+  peer: string;
+  started_at: number;       // unix seconds
+  caller_name: string;      // defaults to t("newPatient") until lookup tools land
+  caller_phone: string | null;
+  turns: Array<{ who: "caller" | "agent"; text: string }>;
 };
 
-const DEMO_TRANSCRIPT: Array<{ who: "agent" | "caller"; text: string }> = [
-  { who: "agent",  text: "السلام عليكم، عيادات برايم ميت. أنا ليلى. كيف أقدر أخدمك؟" },
-  { who: "caller", text: "وعليكم السلام، أبغى أحجز موعد عند طبيب أطفال لبنتي." },
-  { who: "agent",  text: "أبشر. ممكن اسم البنت الكريم وعمرها؟" },
-  { who: "caller", text: "اسمها سارة، عمرها ثلاث سنوات." },
-  { who: "agent",  text: "وأي يوم يناسبك؟ عندنا فترات صباح ومساء بكرة الثلاثاء عند عيادة النور لطب الأطفال." },
-  { who: "caller", text: "بكرة الصباح يناسبني، تسعة أو تسعة ونص." },
-  { who: "agent",  text: "ممتاز، تسعة ونص بكرة الثلاثاء. ممكن رقم جوالك للتأكيد؟" },
-  { who: "caller", text: "خمسة صفر اثنين ثلاثة أربعة خمسة ستة سبعة ثمانية." },
-  { who: "agent",  text: "تم. حجزت الموعد. هل لديك رقم ملف سابق عندنا؟" },
-];
+type WsEvent =
+  | { type: "snapshot"; status: any; calls: Array<{ call_id: string; peer: string; started_at: number }> }
+  | { type: "status"; running: boolean; active: number }
+  | { type: "call_started"; call_id: string; peer: string; started_at: number }
+  | { type: "call_ended"; call_id: string; saved_call_id?: string | null }
+  | { type: "transcript"; call_id: string; who: "caller" | "agent"; text: string };
 
 function DashboardPage() {
   const { t, lang } = useApp();
@@ -67,6 +64,96 @@ function DashboardPage() {
     useDemoCollection<ClinicSlotOverride>("slot_overrides", SEED_SLOT_OVERRIDES);
 
   void providers; // FK look-up reserved for future use
+
+  // ----- live agent WebSocket --------------------------------------------
+  // Subscribes to /api/demo/clinic/agent/ws on mount and keeps a map of
+  // active calls + their growing transcript in component state. Reconnects
+  // on close so the page tolerates backend restarts during the demo.
+  const [liveCalls, setLiveCalls] = useState<Record<string, LiveCall>>({});
+  const [wsConnected, setWsConnected] = useState(false);
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let stopped = false;
+    let reconnectTimer: number | null = null;
+    const connect = () => {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      const url = `${proto}//${location.host}/api/demo/clinic/agent/ws`;
+      try { ws = new WebSocket(url); } catch { ws = null; }
+      if (!ws) return;
+      ws.onopen = () => setWsConnected(true);
+      ws.onclose = () => {
+        setWsConnected(false);
+        if (!stopped) {
+          reconnectTimer = window.setTimeout(connect, 2000);
+        }
+      };
+      ws.onmessage = (evt) => {
+        let m: WsEvent;
+        try { m = JSON.parse(evt.data); } catch { return; }
+        setLiveCalls((prev) => {
+          const next = { ...prev };
+          if (m.type === "snapshot") {
+            // Hydrate any in-flight calls from the snapshot.
+            const fresh: Record<string, LiveCall> = {};
+            for (const c of m.calls || []) {
+              fresh[c.call_id] = {
+                call_id: c.call_id,
+                peer: c.peer,
+                started_at: c.started_at,
+                caller_name: t("newPatient"),
+                caller_phone: null,
+                turns: [],
+              };
+            }
+            return fresh;
+          }
+          if (m.type === "call_started") {
+            next[m.call_id] = {
+              call_id: m.call_id,
+              peer: m.peer,
+              started_at: m.started_at,
+              caller_name: t("newPatient"),
+              caller_phone: null,
+              turns: [],
+            };
+            return next;
+          }
+          if (m.type === "call_ended") {
+            delete next[m.call_id];
+            return next;
+          }
+          if (m.type === "transcript") {
+            const call = next[m.call_id];
+            if (!call) return prev;
+            const turns = [...call.turns];
+            const last = turns[turns.length - 1];
+            if (last && last.who === m.who) {
+              turns[turns.length - 1] = { ...last, text: last.text + m.text };
+            } else {
+              turns.push({ who: m.who, text: m.text });
+            }
+            next[m.call_id] = { ...call, turns };
+            return next;
+          }
+          return prev;
+        });
+      };
+    };
+    connect();
+    return () => {
+      stopped = true;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      try { ws?.close(); } catch { /* ignore */ }
+    };
+  }, [t]);
+
+  // The Dashboard surfaces the most recently started call as "the active
+  // call". When there are zero, the panel renders an empty-state.
+  const activeCallList = useMemo(
+    () => Object.values(liveCalls).sort((a, b) => b.started_at - a.started_at),
+    [liveCalls],
+  );
+  const activeCall = activeCallList[0] ?? null;
 
   // ----- delete cascade --------------------------------------------------
   const [deletingEntry, setDeletingEntry] = useState<AgentActivity | null>(null);
@@ -212,17 +299,27 @@ function DashboardPage() {
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{t("dashboardDesc")}</p>
       </div>
 
-      {/* Active calls + transcript */}
+      {/* Active calls + transcript — both driven by the agent WebSocket */}
       <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
         <div className="rounded-xl border border-border bg-card">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-2">
-              <PhoneCall className="h-4 w-4 text-emerald-600" />
+              <PhoneCall className={`h-4 w-4 ${activeCall ? "text-emerald-600" : "text-muted-foreground"}`} />
               <h2 className="text-sm font-semibold">{t("activeCallsHeading")}</h2>
             </div>
-            <span className="text-xs text-muted-foreground">1</span>
+            <div className="flex items-center gap-2 text-xs">
+              {!wsConnected && (
+                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-700 dark:text-amber-300">
+                  reconnecting…
+                </span>
+              )}
+              <span className="text-muted-foreground">{activeCallList.length}</span>
+            </div>
           </div>
-          <ActiveCallCard call={DEMO_CALL} lang={lang} t={t} />
+          {activeCall
+            ? <ActiveCallCard call={activeCall} t={t} />
+            : <div className="p-6 text-center text-sm text-muted-foreground">{t("noActiveCalls")}</div>
+          }
         </div>
 
         <div className="rounded-xl border border-border bg-card">
@@ -231,10 +328,19 @@ function DashboardPage() {
               <Activity className="h-4 w-4 text-primary" />
               <h2 className="text-sm font-semibold">{t("liveTranscript")}</h2>
             </div>
-            <span className="text-xs text-muted-foreground">{DEMO_TRANSCRIPT.length} turns</span>
+            <span className="text-xs text-muted-foreground">
+              {activeCall ? `${activeCall.turns.length} turns` : "—"}
+            </span>
           </div>
           <div className="max-h-[360px] space-y-2 overflow-y-auto p-4">
-            {DEMO_TRANSCRIPT.map((m, i) => (
+            {(activeCall?.turns ?? []).length === 0 && (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                {activeCall
+                  ? "Awaiting first transcribed turn…"
+                  : t("noActiveCalls")}
+              </div>
+            )}
+            {activeCall?.turns.map((m, i) => (
               <div
                 key={i}
                 className={`flex flex-col rounded-lg p-2.5 text-sm ${
@@ -351,19 +457,22 @@ function DashboardPage() {
 // ---------- subcomponents -------------------------------------------------
 
 function ActiveCallCard({
-  call, lang, t,
+  call, t,
 }: {
-  call: typeof DEMO_CALL;
-  lang: "en" | "ar";
+  call: LiveCall;
   t: (k: never) => string;
 }) {
-  const elapsed = useMemo(() => {
-    const ms = Date.now() - new Date(call.started_iso).getTime();
-    const totalSec = Math.max(0, Math.floor(ms / 1000));
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  }, [call.started_iso]);
+  // Live-ticking duration counter — recomputed every second from the
+  // server-provided started_at.
+  const [now, setNow] = useState<number>(Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  const elapsedSec = Math.max(0, Math.floor((now - call.started_at * 1000) / 1000));
+  const m = Math.floor(elapsedSec / 60);
+  const s = elapsedSec % 60;
+  const elapsed = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 
   return (
     <div className="space-y-3 p-4">
@@ -378,9 +487,11 @@ function ActiveCallCard({
       </div>
       <div>
         <div className="text-base font-semibold text-foreground">
-          {lang === "ar" ? call.name_ar : call.name_en}
+          {call.caller_name}
         </div>
-        <div className="font-mono text-xs text-muted-foreground" dir="ltr">{call.phone}</div>
+        <div className="font-mono text-xs text-muted-foreground" dir="ltr">
+          {call.caller_phone ?? call.peer}
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div className="rounded-lg bg-muted/40 p-2">

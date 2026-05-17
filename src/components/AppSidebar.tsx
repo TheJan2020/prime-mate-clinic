@@ -12,6 +12,7 @@ import {
   BookOpen,
   UserCircle2,
   Sliders,
+  History as HistoryIcon,
   Settings,
   LogOut,
   ChevronRight,
@@ -72,6 +73,7 @@ export function AppSidebar() {
       matchPrefix: "/call-center",
       children: [
         { kind: "leaf", key: "ccDashboard",   title: t("dashboard"),     url: "/call-center/dashboard",      icon: LayoutDashboard },
+        { kind: "leaf", key: "ccHistory",     title: t("history"),       url: "/call-center/history",        icon: HistoryIcon },
         { kind: "leaf", key: "knowledgeBase", title: t("knowledgeBase"), url: "/call-center/knowledge-base", icon: BookOpen },
         { kind: "leaf", key: "persona",       title: t("persona"),       url: "/call-center/persona",        icon: UserCircle2 },
         { kind: "leaf", key: "ccConfig",      title: t("configuration"), url: "/call-center/configuration",  icon: Sliders },

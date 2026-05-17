@@ -23,7 +23,8 @@ import {
 import { useApp } from "@/lib/i18n";
 import {
   SEED_PATIENTS, useDemoCollection, nextId, localized,
-  isValidFileNumber, suggestFileNumber, REGISTRATION_SOURCES,
+  isValidFileNumber, suggestFileNumber,
+  isValidIdNumber, suggestIdNumber, REGISTRATION_SOURCES,
   type Patient, type Gender, type RegistrationSource,
 } from "@/lib/demoStore";
 
@@ -92,6 +93,7 @@ function PatientsPage() {
     const blank: Patient = {
       id: nextId("PAT", items),
       file_number: suggestFileNumber(items),
+      id_number: suggestIdNumber(items),
       name: "",
       name_ar: "",
       gender: "male",
@@ -208,6 +210,7 @@ function PatientsPage() {
               <tr>
                 <th className="px-4 py-2 text-start">ID</th>
                 <th className="px-4 py-2 text-start">{t("fileNumber")}</th>
+                <th className="px-4 py-2 text-start">{t("idNumber")}</th>
                 <th className="px-4 py-2 text-start">{t("name")}</th>
                 <th className="px-4 py-2 text-start">{t("gender")}</th>
                 <th className="px-4 py-2 text-start">{t("age")}</th>
@@ -220,12 +223,13 @@ function PatientsPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {filtered.length === 0 && (
-                <tr><td colSpan={10} className="px-4 py-6 text-center text-muted-foreground">{t("noResults")}</td></tr>
+                <tr><td colSpan={11} className="px-4 py-6 text-center text-muted-foreground">{t("noResults")}</td></tr>
               )}
               {filtered.map((p) => (
                 <tr key={p.id}>
                   <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{p.id}</td>
                   <td className="px-4 py-2 font-mono text-xs font-medium text-foreground" dir="ltr">{p.file_number || "—"}</td>
+                  <td className="px-4 py-2 font-mono text-xs text-muted-foreground" dir="ltr">{p.id_number || "—"}</td>
                   <td className="px-4 py-2 font-medium text-foreground">{localized(p.name, p.name_ar, lang)}</td>
                   <td className="px-4 py-2"><GenderPill gender={p.gender} /></td>
                   <td className="px-4 py-2 text-muted-foreground">{ageFromDob(p.date_of_birth)}</td>
@@ -270,7 +274,7 @@ function PatientsPage() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label={t("fileNumber")} className="col-span-2">
+              <Field label={t("fileNumber")}>
                 <Input
                   dir="ltr"
                   value={draft.file_number ?? ""}
@@ -290,6 +294,29 @@ function PatientsPage() {
                   {draft.file_number && !isValidFileNumber(draft.file_number)
                     ? t("fileNumberInvalid")
                     : t("fileNumberFormat")}
+                </p>
+              </Field>
+              <Field label={t("idNumber")}>
+                <Input
+                  dir="ltr"
+                  value={draft.id_number ?? ""}
+                  onChange={(e) => setDraft({ ...draft, id_number: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                  placeholder="1XXXXXXXXX"
+                  maxLength={10}
+                  inputMode="numeric"
+                  className={
+                    draft.id_number && !isValidIdNumber(draft.id_number)
+                      ? "border-destructive focus-visible:ring-destructive"
+                      : ""
+                  }
+                />
+                <p className={`mt-1 text-[11px] ${
+                  draft.id_number && !isValidIdNumber(draft.id_number)
+                    ? "text-destructive" : "text-muted-foreground"
+                }`}>
+                  {draft.id_number && !isValidIdNumber(draft.id_number)
+                    ? t("idNumberInvalid")
+                    : t("idNumberFormat")}
                 </p>
               </Field>
               <Field label={t("name")}>
@@ -342,7 +369,12 @@ function PatientsPage() {
             <Button variant="ghost" onClick={() => { setEditing(null); setDraft(null); }}>{t("cancel")}</Button>
             <Button
               onClick={saveDraft}
-              disabled={!draft || !draft.name.trim() || !isValidFileNumber(draft.file_number ?? "")}
+              disabled={
+                !draft
+                || !draft.name.trim()
+                || !isValidFileNumber(draft.file_number ?? "")
+                || !isValidIdNumber(draft.id_number ?? "")
+              }
             >
               {t("save")}
             </Button>
