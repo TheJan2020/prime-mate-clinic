@@ -644,7 +644,7 @@ function SlotPicker({
             cls = `${base} border-primary bg-primary text-primary-foreground`;
             title = t("selected");
           } else if (isBreak) {
-            cls = `${base} border-transparent bg-muted/40 text-muted-foreground cursor-not-allowed`;
+            cls = `${base} border-amber-500/40 bg-amber-500/30 text-amber-700 dark:text-amber-300 cursor-not-allowed`;
             title = t("breakSlot");
           } else if (isBooked) {
             cls = `${base} border-transparent bg-sky-500/80 text-white cursor-not-allowed`;
@@ -682,7 +682,7 @@ function SlotPicker({
         <SlotLegendChip cls="bg-primary text-primary-foreground">{t("selected")}</SlotLegendChip>
         <SlotLegendChip cls="bg-sky-500/80 text-white">{t("bookedShort")}</SlotLegendChip>
         <SlotLegendChip cls="bg-destructive/80 text-destructive-foreground">{t("blockedShort")}</SlotLegendChip>
-        <SlotLegendChip cls="bg-muted/40 text-muted-foreground">{t("breakShort")}</SlotLegendChip>
+        <SlotLegendChip cls="bg-amber-500/30 text-amber-700 dark:text-amber-300">{t("breakShort")}</SlotLegendChip>
       </div>
     </div>
   );
