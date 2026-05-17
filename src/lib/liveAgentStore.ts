@@ -63,17 +63,43 @@ function applyEvent(raw: unknown) {
 
   switch (m.type) {
     case "snapshot": {
-      const calls: LiveCall[] = (m.calls || []).map((c: any) => ({
-        call_id:      c.call_id,
-        peer:         c.peer,
-        started_at:   c.started_at,
-        caller_name:  "New patient",
-        caller_phone: null,
-        turns:        [],
-      }));
-      const next: Record<string, LiveCall> = {};
-      for (const c of calls) next[c.call_id] = c;
-      setState({ liveCalls: next });
+      // The backend re-sends snapshot every time a client (re)connects
+      // the WS. If we let it REPLACE liveCalls, we wipe the in-flight
+      // transcript whenever the WS drops + reopens — exact bug we hit
+      // when the user navigated away from the Dashboard and came back
+      // to a blank transcript. Merge instead: preserve our state for
+      // any call_id we already know about, and only seed brand-new ones.
+      setState((s) => {
+        const merged: Record<string, LiveCall> = { ...s.liveCalls };
+        for (const c of (m.calls || [])) {
+          const existing = merged[c.call_id];
+          if (existing) {
+            // Refresh metadata in case the backend learned more (peer,
+            // started_at) but DO NOT touch turns / caller_name / caller_phone.
+            merged[c.call_id] = {
+              ...existing,
+              peer:       c.peer ?? existing.peer,
+              started_at: c.started_at ?? existing.started_at,
+            };
+          } else {
+            merged[c.call_id] = {
+              call_id:      c.call_id,
+              peer:         c.peer,
+              started_at:   c.started_at,
+              caller_name:  "New patient",
+              caller_phone: null,
+              turns:        [],
+            };
+          }
+        }
+        // Note: we deliberately do NOT prune calls that aren't in the
+        // snapshot. If a call_ended happened while we were disconnected,
+        // we'd rather show a slightly-stale "active" panel than wipe
+        // the user's transcript silently. The real call_ended event
+        // will clean up if it ever arrives; otherwise a page refresh
+        // resets the singleton.
+        return { ...s, liveCalls: merged };
+      });
       return;
     }
     case "call_started": {
