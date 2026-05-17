@@ -3,7 +3,14 @@ import { useMemo, useState } from "react";
 import {
   CalendarDays, Plus, Pencil, Trash2, RotateCcw, ChevronLeft,
   ChevronRight, CalendarClock, CheckCircle2, XCircle, UserX2,
+  ChevronsUpDown, Check,
 } from "lucide-react";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -362,15 +369,15 @@ function AppointmentsPage() {
                 </Select>
               </Field>
               <Field label={t("patient")} className="col-span-2">
-                <Select
-                  value={draft.patient_id ?? "__custom__"}
-                  onValueChange={(v) => {
-                    if (v === "__custom__") {
+                <PatientCombobox
+                  patients={patients}
+                  value={draft.patient_id}
+                  draftName={localized(draft.patient_name, draft.patient_name_ar, lang)}
+                  onPick={(p) => {
+                    if (p === null) {
                       setDraft({ ...draft, patient_id: null });
                       return;
                     }
-                    const p = patients.find((x) => x.id === v);
-                    if (!p) return;
                     setDraft({
                       ...draft,
                       patient_id: p.id,
@@ -379,17 +386,7 @@ function AppointmentsPage() {
                       patient_phone: p.phone,
                     });
                   }}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__custom__">{t("none")} ({t("patientName").toLowerCase()})</SelectItem>
-                    {patients.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {localized(p.name, p.name_ar, lang)} <span className="text-muted-foreground">· {p.phone}</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
               </Field>
               <Field label={t("patientName")}>
                 <Input value={draft.patient_name} onChange={(e) => setDraft({ ...draft, patient_name: e.target.value, patient_id: null })} />
@@ -561,6 +558,92 @@ function canSaveDraft(
   const booked = bookedSlotsForDate(items, date, draft.department_id, draft.id);
   if (booked.has(time)) return false;
   return true;
+}
+
+// ---------- PatientCombobox --------------------------------------------
+// Searchable patient picker — replaces the old <Select> so 150 patients
+// stay browsable. Each item's `value` packs id + name(s) + phone + file #
+// so cmdk's built-in filter matches against any of them.
+
+function PatientCombobox({
+  patients, value, draftName, onPick,
+}: {
+  patients: Patient[];
+  value: string | null;
+  draftName: string;
+  onPick: (p: Patient | null) => void;
+}) {
+  const { t, lang } = useApp();
+  const [open, setOpen] = useState(false);
+  const selected = value ? patients.find((p) => p.id === value) ?? null : null;
+  const buttonLabel = selected
+    ? `${localized(selected.name, selected.name_ar, lang)} · ${selected.phone}`
+    : draftName
+      ? `${draftName} (${t("customPatient")})`
+      : t("pickPatient");
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full justify-between font-normal"
+        >
+          <span className="truncate">{buttonLabel}</span>
+          <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+        <Command
+          filter={(itemValue, search) => {
+            // cmdk lowercases internally — also match raw (Arabic) text.
+            const needle = search.trim();
+            if (!needle) return 1;
+            return itemValue.includes(needle.toLowerCase()) || itemValue.includes(needle) ? 1 : 0;
+          }}
+        >
+          <CommandInput placeholder={t("searchPatient")} />
+          <CommandList>
+            <CommandEmpty>{t("noPatientMatch")}</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="__custom__"
+                onSelect={() => { onPick(null); setOpen(false); }}
+              >
+                <Check className={`me-2 h-4 w-4 ${value === null ? "opacity-100" : "opacity-0"}`} />
+                <span className="text-muted-foreground italic">{t("customPatient")}</span>
+              </CommandItem>
+              {patients.map((p) => {
+                const haystack = [
+                  p.id, p.name, p.name_ar, p.phone, p.file_number ?? "", p.city, p.city_ar,
+                ].filter(Boolean).join(" ").toLowerCase();
+                return (
+                  <CommandItem
+                    key={p.id}
+                    value={haystack}
+                    onSelect={() => { onPick(p); setOpen(false); }}
+                  >
+                    <Check className={`me-2 h-4 w-4 ${selected?.id === p.id ? "opacity-100" : "opacity-0"}`} />
+                    <div className="flex flex-1 items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm">{localized(p.name, p.name_ar, lang)}</div>
+                        <div className="truncate text-[11px] text-muted-foreground">
+                          {p.file_number ? `${p.file_number} · ` : ""}{p.phone}
+                        </div>
+                      </div>
+                    </div>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 // ---------- SlotPicker --------------------------------------------------

@@ -18,6 +18,7 @@ import { Route as AppPatientsRouteImport } from './routes/_app.patients'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppClinicsRouteImport } from './routes/_app.clinics'
 import { Route as AppCallCenterRouteImport } from './routes/_app.call-center'
+import { Route as AppCalendarRouteImport } from './routes/_app.calendar'
 import { Route as AppAppointmentsRouteImport } from './routes/_app.appointments'
 
 const LoginRoute = LoginRouteImport.update({
@@ -64,6 +65,11 @@ const AppCallCenterRoute = AppCallCenterRouteImport.update({
   path: '/call-center',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCalendarRoute = AppCalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAppointmentsRoute = AppAppointmentsRouteImport.update({
   id: '/appointments',
   path: '/appointments',
@@ -74,6 +80,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/appointments': typeof AppAppointmentsRoute
+  '/calendar': typeof AppCalendarRoute
   '/call-center': typeof AppCallCenterRoute
   '/clinics': typeof AppClinicsRoute
   '/dashboard': typeof AppDashboardRoute
@@ -85,6 +92,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/appointments': typeof AppAppointmentsRoute
+  '/calendar': typeof AppCalendarRoute
   '/call-center': typeof AppCallCenterRoute
   '/clinics': typeof AppClinicsRoute
   '/dashboard': typeof AppDashboardRoute
@@ -98,6 +106,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/_app/appointments': typeof AppAppointmentsRoute
+  '/_app/calendar': typeof AppCalendarRoute
   '/_app/call-center': typeof AppCallCenterRoute
   '/_app/clinics': typeof AppClinicsRoute
   '/_app/dashboard': typeof AppDashboardRoute
@@ -111,6 +120,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/appointments'
+    | '/calendar'
     | '/call-center'
     | '/clinics'
     | '/dashboard'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/appointments'
+    | '/calendar'
     | '/call-center'
     | '/clinics'
     | '/dashboard'
@@ -134,6 +145,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/login'
     | '/_app/appointments'
+    | '/_app/calendar'
     | '/_app/call-center'
     | '/_app/clinics'
     | '/_app/dashboard'
@@ -213,6 +225,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCallCenterRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/calendar': {
+      id: '/_app/calendar'
+      path: '/calendar'
+      fullPath: '/calendar'
+      preLoaderRoute: typeof AppCalendarRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/appointments': {
       id: '/_app/appointments'
       path: '/appointments'
@@ -225,6 +244,7 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppAppointmentsRoute: typeof AppAppointmentsRoute
+  AppCalendarRoute: typeof AppCalendarRoute
   AppCallCenterRoute: typeof AppCallCenterRoute
   AppClinicsRoute: typeof AppClinicsRoute
   AppDashboardRoute: typeof AppDashboardRoute
@@ -235,6 +255,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAppointmentsRoute: AppAppointmentsRoute,
+  AppCalendarRoute: AppCalendarRoute,
   AppCallCenterRoute: AppCallCenterRoute,
   AppClinicsRoute: AppClinicsRoute,
   AppDashboardRoute: AppDashboardRoute,
