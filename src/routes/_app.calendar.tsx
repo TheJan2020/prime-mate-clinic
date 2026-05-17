@@ -178,11 +178,15 @@ function CalendarPage() {
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
-              variant="outline"
+              variant={weekYmds.includes(todayYmd) ? "default" : "outline"}
               onClick={() => setWeekAnchor(new Date())}
-              className="h-9"
+              className="h-9 min-w-[200px] justify-center"
+              title={t("today")}
             >
-              {t("today")}
+              {weekRangeLabel(weekYmds, lang)}
+              {weekYmds.includes(todayYmd) && (
+                <span className="ms-2 text-[10px] uppercase opacity-80">· {t("today")}</span>
+              )}
             </Button>
             <Button size="icon" variant="outline" onClick={() => shiftWeek(1)} aria-label={t("nextWeek")}>
               <ChevronRight className="h-4 w-4" />
@@ -324,6 +328,32 @@ function dateToShort(ymd: string, lang: "en" | "ar"): string {
   return date.toLocaleDateString(lang === "ar" ? "ar-EG" : undefined, {
     month: "short", day: "numeric",
   });
+}
+
+/** "May 18 – 24, 2026" (collapses month/year when the week doesn't cross
+ * boundaries, mirrors how most calendar apps render the header label). */
+function weekRangeLabel(weekYmds: string[], lang: "en" | "ar"): string {
+  if (weekYmds.length === 0) return "";
+  const localeArg = lang === "ar" ? "ar-EG" : undefined;
+  const [sy, sm, sd] = weekYmds[0].split("-").map((n) => parseInt(n, 10));
+  const [ey, em, ed] = weekYmds[weekYmds.length - 1].split("-").map((n) => parseInt(n, 10));
+  const start = new Date(sy, sm - 1, sd);
+  const end = new Date(ey, em - 1, ed);
+  const sameMonth = sm === em && sy === ey;
+  const sameYear = sy === ey;
+  if (sameMonth) {
+    const startStr = start.toLocaleDateString(localeArg, { month: "short", day: "numeric" });
+    const endStr = end.toLocaleDateString(localeArg, { day: "numeric", year: "numeric" });
+    return `${startStr} – ${endStr}`;
+  }
+  if (sameYear) {
+    const startStr = start.toLocaleDateString(localeArg, { month: "short", day: "numeric" });
+    const endStr = end.toLocaleDateString(localeArg, { month: "short", day: "numeric", year: "numeric" });
+    return `${startStr} – ${endStr}`;
+  }
+  const startStr = start.toLocaleDateString(localeArg, { month: "short", day: "numeric", year: "numeric" });
+  const endStr = end.toLocaleDateString(localeArg, { month: "short", day: "numeric", year: "numeric" });
+  return `${startStr} – ${endStr}`;
 }
 
 function LegendChip({ cls, children }: { cls: string; children: React.ReactNode }) {
