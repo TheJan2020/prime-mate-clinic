@@ -12,6 +12,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useApp } from "@/lib/i18n";
 import {
+  consumeMutation, useLiveAgentStore,
+  type LiveCall,
+} from "@/lib/liveAgentStore";
+import {
   SEED_AGENT_ACTIVITY,
   SEED_DEPARTMENTS, SEED_PATIENTS, SEED_PROVIDERS, SEED_SLOT_OVERRIDES,
   DEFAULT_WORKING_HOURS, SLOT_MINUTES,
@@ -26,25 +30,9 @@ export const Route = createFileRoute("/_app/call-center/dashboard")({
   component: DashboardPage,
 });
 
-// ---- Live call shape -----------------------------------------------------
-// The backend's /agent/ws WebSocket pushes events in this shape (see
-// backend/app/demos/clinic/router.py → agent_ws + live_agent.py
-// CallSession._broadcast). The Dashboard re-shapes them into rows.
-type LiveCall = {
-  call_id: string;
-  peer: string;
-  started_at: number;       // unix seconds
-  caller_name: string;      // defaults to t("newPatient") until lookup tools land
-  caller_phone: string | null;
-  turns: Array<{ who: "caller" | "agent"; text: string }>;
-};
-
-type WsEvent =
-  | { type: "snapshot"; status: any; calls: Array<{ call_id: string; peer: string; started_at: number }> }
-  | { type: "status"; running: boolean; active: number }
-  | { type: "call_started"; call_id: string; peer: string; started_at: number }
-  | { type: "call_ended"; call_id: string; saved_call_id?: string | null }
-  | { type: "transcript"; call_id: string; who: "caller" | "agent"; text: string };
+// LiveCall type now imported from @/lib/liveAgentStore (singleton store
+// that owns the WebSocket so the transcript survives navigation while a
+// call is active).
 
 function DashboardPage() {
   const { t, lang } = useApp();
@@ -65,95 +53,80 @@ function DashboardPage() {
 
   void providers; // FK look-up reserved for future use
 
-  // ----- live agent WebSocket --------------------------------------------
-  // Subscribes to /api/demo/clinic/agent/ws on mount and keeps a map of
-  // active calls + their growing transcript in component state. Reconnects
-  // on close so the page tolerates backend restarts during the demo.
-  const [liveCalls, setLiveCalls] = useState<Record<string, LiveCall>>({});
-  const [wsConnected, setWsConnected] = useState(false);
-  useEffect(() => {
-    let ws: WebSocket | null = null;
-    let stopped = false;
-    let reconnectTimer: number | null = null;
-    const connect = () => {
-      const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      const url = `${proto}//${location.host}/api/demo/clinic/agent/ws`;
-      try { ws = new WebSocket(url); } catch { ws = null; }
-      if (!ws) return;
-      ws.onopen = () => setWsConnected(true);
-      ws.onclose = () => {
-        setWsConnected(false);
-        if (!stopped) {
-          reconnectTimer = window.setTimeout(connect, 2000);
-        }
-      };
-      ws.onmessage = (evt) => {
-        let m: WsEvent;
-        try { m = JSON.parse(evt.data); } catch { return; }
-        setLiveCalls((prev) => {
-          const next = { ...prev };
-          if (m.type === "snapshot") {
-            // Hydrate any in-flight calls from the snapshot.
-            const fresh: Record<string, LiveCall> = {};
-            for (const c of m.calls || []) {
-              fresh[c.call_id] = {
-                call_id: c.call_id,
-                peer: c.peer,
-                started_at: c.started_at,
-                caller_name: t("newPatient"),
-                caller_phone: null,
-                turns: [],
-              };
-            }
-            return fresh;
-          }
-          if (m.type === "call_started") {
-            next[m.call_id] = {
-              call_id: m.call_id,
-              peer: m.peer,
-              started_at: m.started_at,
-              caller_name: t("newPatient"),
-              caller_phone: null,
-              turns: [],
-            };
-            return next;
-          }
-          if (m.type === "call_ended") {
-            delete next[m.call_id];
-            return next;
-          }
-          if (m.type === "transcript") {
-            const call = next[m.call_id];
-            if (!call) return prev;
-            const turns = [...call.turns];
-            const last = turns[turns.length - 1];
-            if (last && last.who === m.who) {
-              turns[turns.length - 1] = { ...last, text: last.text + m.text };
-            } else {
-              turns.push({ who: m.who, text: m.text });
-            }
-            next[m.call_id] = { ...call, turns };
-            return next;
-          }
-          return prev;
-        });
-      };
-    };
-    connect();
-    return () => {
-      stopped = true;
-      if (reconnectTimer) window.clearTimeout(reconnectTimer);
-      try { ws?.close(); } catch { /* ignore */ }
-    };
-  }, [t]);
-
-  // The Dashboard surfaces the most recently started call as "the active
-  // call". When there are zero, the panel renders an empty-state.
+  // ----- live agent feed (singleton store, survives navigation) ----------
+  const live = useLiveAgentStore();
   const activeCallList = useMemo(
-    () => Object.values(liveCalls).sort((a, b) => b.started_at - a.started_at),
-    [liveCalls],
+    () => Object.values(live.liveCalls).sort((a, b) => b.started_at - a.started_at),
+    [live.liveCalls],
   );
   const activeCall = activeCallList[0] ?? null;
+  const wsConnected = live.wsConnected;
+
+  // Push the SPA's current state to the backend so the agent's function
+  // tools (lookup_patient_by_*, list_free_slots, etc.) have live data.
+  // Runs on mount + whenever any of the SPA-side collections change.
+  useEffect(() => {
+    const snapshot = {
+      patients,
+      appointments,
+      clinics,
+      providers,
+      slot_overrides: overrides,
+    };
+    fetch("/api/demo/clinic/data/snapshot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(snapshot),
+    }).catch(() => {
+      // Backend may be down or restarting — non-fatal; next mutation retries.
+    });
+  }, [patients, appointments, clinics, providers, overrides]);
+
+  // When the backend agent creates a patient / appointment via a tool call
+  // it broadcasts a tool_mutation event. Mirror those records into the
+  // SPA's localStorage so the Patients + Appointments pages show what the
+  // agent did, AND drop an entry into the SPA's existing agent_activity
+  // feed so the per-row delete-with-cascade button keeps working.
+  useEffect(() => {
+    for (const ev of live.recentMutations) {
+      if (ev.kind === "patient_created" && ev.patient && !patients.some((p) => p.id === ev.patient.id)) {
+        setPatients([...patients, ev.patient]);
+        setActivity([{
+          id:             nextId("LAE", activity),
+          ts:             new Date().toISOString(),
+          call_id:        ev.call_id,
+          caller_name:    ev.patient.name || "Unknown",
+          caller_phone:   ev.patient.phone || "",
+          action:         "create_patient",
+          summary:        `Created new patient ${ev.patient.name} (file ${ev.patient.file_number})`,
+          summary_ar:     `أنشأ مريضاً جديداً ${ev.patient.name_ar || ev.patient.name} (الملف ${ev.patient.file_number})`,
+          patient_id:     ev.patient.id,
+          appointment_id: null,
+        }, ...activity]);
+        consumeMutation(ev);
+      } else if (ev.kind === "appointment_created" && ev.appointment && !appointments.some((a) => a.id === ev.appointment.id)) {
+        setAppointments([...appointments, ev.appointment]);
+        const apt = ev.appointment;
+        setActivity([{
+          id:             nextId("LAE", activity),
+          ts:             new Date().toISOString(),
+          call_id:        ev.call_id,
+          caller_name:    apt.patient_name || "Unknown",
+          caller_phone:   apt.patient_phone || "",
+          action:         "create_appointment",
+          summary:        `Booked appointment ${apt.id} at ${apt.scheduled_at?.slice(0, 16).replace("T", " ")}`,
+          summary_ar:     `حجز موعد ${apt.id} في ${apt.scheduled_at?.slice(0, 16).replace("T", " ")}`,
+          patient_id:     null,
+          appointment_id: apt.id,
+        }, ...activity]);
+        consumeMutation(ev);
+      } else {
+        // Already applied (or unknown kind) — drain so we don't reprocess.
+        consumeMutation(ev);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live.recentMutations]);
 
   // ----- delete cascade --------------------------------------------------
   const [deletingEntry, setDeletingEntry] = useState<AgentActivity | null>(null);

@@ -1,0 +1,227 @@
+/**
+ * Module-level singleton for the Live Agent WebSocket feed.
+ *
+ * Lives outside React's component tree so navigating away from the
+ * Dashboard (e.g. opening Patients or Configuration) does NOT tear
+ * down the connection or wipe the in-flight transcript. The store
+ * survives all in-SPA navigation; it resets only on a full page
+ * reload (browser refresh), which is the right semantic — a refresh
+ * "starts a new session" but in-app navigation does not.
+ *
+ * Components subscribe via the useLiveAgentStore() hook and re-render
+ * on any state change.
+ */
+import { useEffect, useState } from "react";
+
+export type LiveCall = {
+  call_id: string;
+  peer: string;
+  started_at: number;          // unix seconds
+  caller_name: string;         // defaults to "New patient" until a tool resolves it
+  caller_phone: string | null;
+  turns: Array<{ who: "caller" | "agent"; text: string }>;
+};
+
+export type ToolMutationEvent = {
+  /** What changed — drives the SPA-side localStorage sync. */
+  kind: "patient_created" | "appointment_created";
+  call_id: string;
+  patient?: any;        // shape mirrors clinic SPA Patient
+  appointment?: any;    // shape mirrors clinic SPA Appointment
+};
+
+type State = {
+  wsConnected: boolean;
+  liveCalls: Record<string, LiveCall>;
+  /** Append-only log of recent mutations the agent emitted. The Dashboard
+   * applies these to the SPA's localStorage so the Patients / Appointments
+   * pages catch up to what the agent did on a call. */
+  recentMutations: ToolMutationEvent[];
+};
+
+type Listener = () => void;
+
+let state: State = {
+  wsConnected: false,
+  liveCalls: {},
+  recentMutations: [],
+};
+const listeners = new Set<Listener>();
+let ws: WebSocket | null = null;
+let reconnectTimer: number | null = null;
+let starting = false;
+
+function setState(patch: Partial<State> | ((s: State) => State)) {
+  state = typeof patch === "function" ? patch(state) : { ...state, ...patch };
+  for (const l of listeners) l();
+}
+
+function applyEvent(raw: unknown) {
+  let m: any;
+  try { m = typeof raw === "string" ? JSON.parse(raw) : raw; } catch { return; }
+  if (!m || typeof m !== "object") return;
+
+  switch (m.type) {
+    case "snapshot": {
+      const calls: LiveCall[] = (m.calls || []).map((c: any) => ({
+        call_id:      c.call_id,
+        peer:         c.peer,
+        started_at:   c.started_at,
+        caller_name:  "New patient",
+        caller_phone: null,
+        turns:        [],
+      }));
+      const next: Record<string, LiveCall> = {};
+      for (const c of calls) next[c.call_id] = c;
+      setState({ liveCalls: next });
+      return;
+    }
+    case "call_started": {
+      setState((s) => ({
+        ...s,
+        liveCalls: {
+          ...s.liveCalls,
+          [m.call_id]: {
+            call_id:      m.call_id,
+            peer:         m.peer,
+            started_at:   m.started_at,
+            caller_name:  "New patient",
+            caller_phone: null,
+            turns:        [],
+          },
+        },
+      }));
+      return;
+    }
+    case "call_ended": {
+      setState((s) => {
+        const { [m.call_id]: _drop, ...rest } = s.liveCalls;
+        return { ...s, liveCalls: rest };
+      });
+      return;
+    }
+    case "transcript": {
+      setState((s) => {
+        const call = s.liveCalls[m.call_id];
+        if (!call) return s;
+        const turns = [...call.turns];
+        const last = turns[turns.length - 1];
+        if (last && last.who === m.who) {
+          turns[turns.length - 1] = { ...last, text: last.text + m.text };
+        } else {
+          turns.push({ who: m.who, text: m.text });
+        }
+        return {
+          ...s,
+          liveCalls: { ...s.liveCalls, [m.call_id]: { ...call, turns } },
+        };
+      });
+      return;
+    }
+    case "caller_identified": {
+      // Emitted after a successful lookup_* tool call so the Dashboard
+      // can show the real patient name + phone.
+      setState((s) => {
+        const call = s.liveCalls[m.call_id];
+        if (!call) return s;
+        return {
+          ...s,
+          liveCalls: {
+            ...s.liveCalls,
+            [m.call_id]: {
+              ...call,
+              caller_name:  m.name || call.caller_name,
+              caller_phone: m.phone ?? call.caller_phone,
+            },
+          },
+        };
+      });
+      return;
+    }
+    case "tool_mutation": {
+      // Append a copy for any subscriber that's watching mutations
+      // (the Dashboard mirrors these into localStorage so the SPA's
+      // Patients / Appointments pages reflect what the agent did).
+      const event: ToolMutationEvent = {
+        kind:        m.kind,
+        call_id:     m.call_id,
+        patient:     m.patient,
+        appointment: m.appointment,
+      };
+      setState((s) => ({
+        ...s,
+        // keep the last 100 so the buffer doesn't grow forever during a
+        // long session
+        recentMutations: [event, ...s.recentMutations].slice(0, 100),
+      }));
+      return;
+    }
+    default:
+      return;
+  }
+}
+
+function connect() {
+  if (typeof window === "undefined") return;
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  if (starting) return;
+  starting = true;
+  try {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    const url = `${proto}//${location.host}/api/demo/clinic/agent/ws`;
+    ws = new WebSocket(url);
+  } catch {
+    ws = null;
+    starting = false;
+    scheduleReconnect();
+    return;
+  }
+  ws.onopen = () => {
+    starting = false;
+    setState({ wsConnected: true });
+  };
+  ws.onmessage = (e) => applyEvent(e.data);
+  ws.onclose = () => {
+    starting = false;
+    setState({ wsConnected: false });
+    ws = null;
+    scheduleReconnect();
+  };
+  ws.onerror = () => {
+    // close handler runs after this; reconnect is scheduled there
+  };
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) window.clearTimeout(reconnectTimer);
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null;
+    connect();
+  }, 2000);
+}
+
+export function liveAgentStoreSnapshot(): State {
+  return state;
+}
+
+export function consumeMutation(event: ToolMutationEvent) {
+  // Called by the Dashboard once it has applied a mutation to localStorage,
+  // so the same event isn't replayed.
+  setState((s) => ({
+    ...s,
+    recentMutations: s.recentMutations.filter((e) => e !== event),
+  }));
+}
+
+/** React hook — re-renders the component on any store change. Boots the
+ * WebSocket on first use; multiple components share the same connection. */
+export function useLiveAgentStore(): State {
+  const [, force] = useState(0);
+  useEffect(() => {
+    connect();
+    const l = () => force((n) => n + 1);
+    listeners.add(l);
+    return () => { listeners.delete(l); };
+  }, []);
+  return state;
+}
