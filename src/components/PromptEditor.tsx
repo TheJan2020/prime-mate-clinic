@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { RotateCcw, Save, Copy, Check } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { RotateCcw, Save, Copy, Check, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useApp } from "@/lib/i18n";
@@ -72,11 +72,10 @@ export function PromptEditor({ heading, description, storageKey, defaultText }: 
       </div>
 
       {/* Editable section */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h2 className="text-sm font-semibold text-card-foreground">{t("editableSection")}</h2>
-          <span className="text-xs text-muted-foreground">{draft.length.toLocaleString()} chars</span>
-        </div>
+      <Collapsible
+        title={t("editableSection")}
+        meta={`${draft.length.toLocaleString()} chars`}
+      >
         <div className="p-4">
           <Textarea
             value={draft}
@@ -86,35 +85,68 @@ export function PromptEditor({ heading, description, storageKey, defaultText }: 
             className="resize-y font-mono text-[12.5px] leading-relaxed"
           />
         </div>
-      </div>
+      </Collapsible>
 
       {/* Live state preview */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h2 className="text-sm font-semibold text-card-foreground">{t("liveStatePreview")}</h2>
-          <span className="text-xs text-muted-foreground">{liveBlock.length.toLocaleString()} chars · auto</span>
-        </div>
+      <Collapsible
+        title={t("liveStatePreview")}
+        meta={`${liveBlock.length.toLocaleString()} chars · auto`}
+      >
         <pre className="max-h-[420px] overflow-auto whitespace-pre-wrap p-4 font-mono text-[12px] leading-relaxed text-muted-foreground" dir="auto">
 {liveBlock}
         </pre>
-      </div>
+      </Collapsible>
 
       {/* Full compiled prompt */}
-      <div className="rounded-xl border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h2 className="text-sm font-semibold text-card-foreground">{t("compiledPrompt")}</h2>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">{compiled.length.toLocaleString()} chars</span>
-            <Button size="sm" variant="outline" onClick={onCopy}>
-              {copied ? <Check className="me-1.5 h-3.5 w-3.5" /> : <Copy className="me-1.5 h-3.5 w-3.5" />}
-              {copied ? t("copied") : t("copyPrompt")}
-            </Button>
-          </div>
-        </div>
+      <Collapsible
+        title={t("compiledPrompt")}
+        meta={`${compiled.length.toLocaleString()} chars`}
+        headerExtra={
+          <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); onCopy(); }}>
+            {copied ? <Check className="me-1.5 h-3.5 w-3.5" /> : <Copy className="me-1.5 h-3.5 w-3.5" />}
+            {copied ? t("copied") : t("copyPrompt")}
+          </Button>
+        }
+      >
         <pre className="max-h-[480px] overflow-auto whitespace-pre-wrap p-4 font-mono text-[12px] leading-relaxed text-foreground" dir="auto">
 {compiled}
         </pre>
-      </div>
+      </Collapsible>
+    </div>
+  );
+}
+
+/** Card with a clickable header that expands/collapses the body. Closed
+ * by default so all three sections start tidy and the page is short. */
+function Collapsible({
+  title, meta, headerExtra, children,
+}: {
+  title: string;
+  meta?: string;
+  headerExtra?: ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 border-b border-border bg-card px-5 py-3 text-start hover:bg-accent/40 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <ChevronDown
+            className={`h-4 w-4 text-muted-foreground transition-transform ${open ? "rotate-0" : "-rotate-90"}`}
+          />
+          <h2 className="text-sm font-semibold text-card-foreground">{title}</h2>
+        </div>
+        <div className="flex items-center gap-3">
+          {meta && <span className="text-xs text-muted-foreground">{meta}</span>}
+          {headerExtra}
+        </div>
+      </button>
+      {open && children}
     </div>
   );
 }
