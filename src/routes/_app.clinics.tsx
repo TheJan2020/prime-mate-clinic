@@ -2,7 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   Building2, Plus, Pencil, Trash2, RotateCcw, MapPin, BadgeCheck,
+  Calendar,
 } from "lucide-react";
+import { ScheduleDialog } from "@/components/ScheduleDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,8 +23,9 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/lib/i18n";
 import {
-  SEED_DEPARTMENTS, SEED_PROVIDERS, useDemoCollection, nextId, localized,
-  type Department, type Provider,
+  SEED_DEPARTMENTS, SEED_PROVIDERS, SEED_SLOT_OVERRIDES, useDemoCollection,
+  nextId, localized, DEFAULT_WORKING_HOURS, weekDates,
+  type Department, type Provider, type ClinicSlotOverride, type DayHours,
 } from "@/lib/demoStore";
 
 export const Route = createFileRoute("/_app/clinics")({
@@ -35,6 +38,8 @@ function ClinicsPage() {
     useDemoCollection<Department>("departments", SEED_DEPARTMENTS);
   const { items: providers } =
     useDemoCollection<Provider>("providers", SEED_PROVIDERS);
+  const { items: slotOverrides, setAll: setSlotOverrides } =
+    useDemoCollection<ClinicSlotOverride>("slot_overrides", SEED_SLOT_OVERRIDES);
 
   const providerById = useMemo(() => {
     const map = new Map<string, Provider>();
@@ -53,6 +58,50 @@ function ClinicsPage() {
   const [draft, setDraft] = useState<Department | null>(null);
   const [deleting, setDeleting] = useState<Department | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
+  const [scheduling, setScheduling] = useState<Department | null>(null);
+
+  /** Sum of blocked slots for this department in the current week — used to
+   * decorate the Schedule button with a count badge. */
+  const weekBlockCount = useMemo(() => {
+    const weekYmds = new Set(weekDates());
+    const counts = new Map<string, number>();
+    for (const o of slotOverrides) {
+      if (!weekYmds.has(o.date)) continue;
+      counts.set(o.department_id, (counts.get(o.department_id) ?? 0) + o.blocked_slots.length);
+    }
+    return counts;
+  }, [slotOverrides]);
+
+  const handleScheduleSave = (
+    nextHours: DayHours[],
+    weekOverrides: { date: string; blocked_slots: string[] }[],
+  ) => {
+    if (!scheduling) return;
+    // 1. Patch the department's working_hours.
+    setAll(items.map((x) => x.id === scheduling.id ? { ...x, working_hours: nextHours } : x));
+    // 2. Replace this department's current-week overrides with the new set;
+    //    preserve everything else (other depts, past/future weeks).
+    const weekYmds = new Set(weekDates());
+    const keep = slotOverrides.filter(
+      (o) => o.department_id !== scheduling.id || !weekYmds.has(o.date),
+    );
+    const fresh: ClinicSlotOverride[] = weekOverrides
+      .filter((w) => w.blocked_slots.length > 0)
+      .map((w) => ({
+        id: nextId("OVR", [...keep, ...slotOverrides]),
+        department_id: scheduling.id,
+        date: w.date,
+        blocked_slots: w.blocked_slots,
+      }))
+      // nextId reads the highest ID — rebuild sequentially to avoid collisions.
+      .reduce<ClinicSlotOverride[]>((acc, row) => {
+        const id = nextId("OVR", [...keep, ...acc]);
+        acc.push({ ...row, id });
+        return acc;
+      }, []);
+    setSlotOverrides([...keep, ...fresh]);
+    setScheduling(null);
+  };
 
   const openAdd = () => {
     const blank: Department = {
@@ -65,6 +114,7 @@ function ClinicsPage() {
       location_ar: "",
       head_id: null,
       active: true,
+      working_hours: DEFAULT_WORKING_HOURS.map((h) => ({ ...h })),
     };
     setEditing(blank);
     setDraft(blank);
@@ -183,7 +233,22 @@ function ClinicsPage() {
                     </td>
                     <td className="px-4 py-2"><StatusPill active={d.active} /></td>
                     <td className="px-4 py-2 text-end">
-                      <div className="inline-flex gap-1">
+                      <div className="inline-flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setScheduling(d)}
+                          aria-label={t("manageSchedule")}
+                          className="h-8 gap-1.5 px-2"
+                        >
+                          <Calendar className="h-3.5 w-3.5" />
+                          <span className="text-xs">{t("schedule")}</span>
+                          {(weekBlockCount.get(d.id) ?? 0) > 0 && (
+                            <span className="ms-1 inline-flex items-center rounded-full bg-destructive/15 px-1.5 py-0 text-[10px] font-medium text-destructive">
+                              {weekBlockCount.get(d.id)}
+                            </span>
+                          )}
+                        </Button>
                         <Button size="icon" variant="ghost" onClick={() => openEdit(d)} aria-label={t("edit")}>
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -274,6 +339,13 @@ function ClinicsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ScheduleDialog
+        department={scheduling}
+        overrides={slotOverrides}
+        onClose={() => setScheduling(null)}
+        onSave={handleScheduleSave}
+      />
 
       <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
         <AlertDialogContent>

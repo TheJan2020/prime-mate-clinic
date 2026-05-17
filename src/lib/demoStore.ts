@@ -115,6 +115,31 @@ export function localized(en: string, ar: string | undefined | null, lang: Lang)
 // Entity types
 // ============================================================================
 
+/** Per-day schedule. Slot granularity is fixed at 30 min for the demo. */
+export type DayHours = {
+  open: boolean;
+  open_time: string;       // "HH:MM" — start of day's open window
+  close_time: string;      // "HH:MM" — end of day's open window (exclusive of last slot start + 30 min)
+  break_enabled: boolean;
+  break_start: string;     // "HH:MM"
+  break_end: string;       // "HH:MM"
+};
+
+/** 7-entry default schedule, indexed Sun..Sat. Mirrors a typical Saudi
+ * clinic week: Sun-Thu 09:00-17:00 with a 13:00-14:00 break, Fri closed,
+ * Sat half-day morning. */
+export const DEFAULT_WORKING_HOURS: DayHours[] = [
+  { open: true,  open_time: "09:00", close_time: "17:00", break_enabled: true,  break_start: "13:00", break_end: "14:00" }, // Sun
+  { open: true,  open_time: "09:00", close_time: "17:00", break_enabled: true,  break_start: "13:00", break_end: "14:00" }, // Mon
+  { open: true,  open_time: "09:00", close_time: "17:00", break_enabled: true,  break_start: "13:00", break_end: "14:00" }, // Tue
+  { open: true,  open_time: "09:00", close_time: "17:00", break_enabled: true,  break_start: "13:00", break_end: "14:00" }, // Wed
+  { open: true,  open_time: "09:00", close_time: "17:00", break_enabled: true,  break_start: "13:00", break_end: "14:00" }, // Thu
+  { open: false, open_time: "09:00", close_time: "17:00", break_enabled: false, break_start: "13:00", break_end: "14:00" }, // Fri
+  { open: true,  open_time: "09:00", close_time: "13:00", break_enabled: false, break_start: "12:00", break_end: "13:00" }, // Sat
+];
+
+export const SLOT_MINUTES = 30;
+
 export type Department = {
   id: string;
   name: string;
@@ -125,7 +150,22 @@ export type Department = {
   location_ar: string;
   head_id: string | null; // → Provider.id
   active: boolean;
+  /** Optional; when missing, the dialog falls back to DEFAULT_WORKING_HOURS. */
+  working_hours?: DayHours[];
 };
+
+/** Date-keyed list of slot times to treat as blocked for one clinic on one
+ * day. By tying overrides to absolute dates (not week numbers) they
+ * naturally stop applying as soon as the date is in the past — next week
+ * gets a fresh default schedule with no work to do. */
+export type ClinicSlotOverride = {
+  id: string;
+  department_id: string;
+  date: string;            // "YYYY-MM-DD"
+  blocked_slots: string[]; // ["09:00", "09:30", ...]
+};
+
+export const SEED_SLOT_OVERRIDES: ClinicSlotOverride[] = [];
 
 export type ProviderRole = "doctor" | "nurse" | "tech" | "admin";
 
@@ -194,7 +234,7 @@ export const SEED_PROVIDERS: Provider[] = [
   { id: "PRV-010", name: "Admin Hadi Tabet",     name_ar: "الإداري هادي ثابت", role: "admin",  specialty: "Front Desk",      specialty_ar: "الاستقبال",         email: "h.tabet@primemate.clinic",    phone: "+966 50 111 0010", active: true },
 ];
 
-export const SEED_DEPARTMENTS: Department[] = [
+const SEED_DEPARTMENTS_RAW: Omit<Department, "working_hours">[] = [
   { id: "DEP-001", name: "Al Noor Pediatrics",       name_ar: "عيادة النور لطب الأطفال",    specialty: "Pediatrics",      specialty_ar: "طب الأطفال",      location: "Riyadh · Olaya",      location_ar: "الرياض · العليا",   head_id: "PRV-001", active: true },
   { id: "DEP-002", name: "Cairo Cardio Center",      name_ar: "مركز القاهرة للقلب",         specialty: "Cardiology",      specialty_ar: "طب القلب",         location: "Riyadh · Al Malaz",   location_ar: "الرياض · الملز",    head_id: "PRV-002", active: true },
   { id: "DEP-003", name: "Smile Dental",             name_ar: "عيادة سمايل لطب الأسنان",    specialty: "Dentistry",       specialty_ar: "طب الأسنان",       location: "Jeddah · Al Hamra",   location_ar: "جدة · الحمراء",      head_id: "PRV-004", active: true },
@@ -202,6 +242,12 @@ export const SEED_DEPARTMENTS: Department[] = [
   { id: "DEP-005", name: "SkinScience Dermatology",  name_ar: "سكين ساينس للأمراض الجلدية", specialty: "Dermatology",     specialty_ar: "الأمراض الجلدية",  location: "Riyadh · Al Yasmin",  location_ar: "الرياض · الياسمين",  head_id: "PRV-003", active: true },
   { id: "DEP-006", name: "BoneCare Orthopedics",     name_ar: "بون كير لجراحة العظام",      specialty: "Orthopedics",     specialty_ar: "جراحة العظام",     location: "Jeddah · Al Salama",  location_ar: "جدة · السلامة",     head_id: "PRV-006", active: true },
 ];
+
+export const SEED_DEPARTMENTS: Department[] = SEED_DEPARTMENTS_RAW.map((d) => ({
+  ...d,
+  // Deep copy so a per-clinic edit doesn't accidentally mutate the prototype.
+  working_hours: DEFAULT_WORKING_HOURS.map((h) => ({ ...h })),
+}));
 
 // ----- Patients seed --------------------------------------------------------
 // 50 patients spread across Saudi cities, with Saudi mobile numbers.
@@ -431,15 +477,75 @@ export function getSeedAppointments(): Appointment[] {
 // ----- Helpers used by the CRUD pages ---------------------------------------
 
 export function nextId(
-  prefix: "DEP" | "PRV" | "APT" | "PAT",
+  prefix: "DEP" | "PRV" | "APT" | "PAT" | "OVR",
   items: { id: string }[],
 ): string {
   const max = items.reduce((m, it) => {
-    const match = it.id.match(/^(?:DEP|PRV|APT|PAT)-(\d+)$/);
+    const match = it.id.match(/^(?:DEP|PRV|APT|PAT|OVR)-(\d+)$/);
     if (!match) return m;
     const n = parseInt(match[1], 10);
     return n > m ? n : m;
   }, 0);
   const width = prefix === "PAT" ? 4 : 3;
   return `${prefix}-${String(max + 1).padStart(width, "0")}`;
+}
+
+// ============================================================================
+// Time / slot helpers (used by the Schedule dialog)
+// ============================================================================
+
+/** "HH:MM" → minutes since midnight. */
+export function timeToMinutes(t: string): number {
+  const [h, m] = t.split(":").map((n) => parseInt(n, 10));
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+}
+
+/** minutes since midnight → "HH:MM". */
+export function minutesToTime(m: number): string {
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+/** All slot start times for a given day's hours, at SLOT_MINUTES granularity. */
+export function slotsForDay(hours: DayHours): string[] {
+  if (!hours.open) return [];
+  const start = timeToMinutes(hours.open_time);
+  const end = timeToMinutes(hours.close_time);
+  const out: string[] = [];
+  for (let m = start; m + SLOT_MINUTES <= end; m += SLOT_MINUTES) {
+    out.push(minutesToTime(m));
+  }
+  return out;
+}
+
+/** True when this slot lies within the day's break window. */
+export function isBreakSlot(slot: string, hours: DayHours): boolean {
+  if (!hours.break_enabled) return false;
+  const s = timeToMinutes(slot);
+  return s >= timeToMinutes(hours.break_start) && s < timeToMinutes(hours.break_end);
+}
+
+/** Return the YYYY-MM-DD strings for Sunday..Saturday of the week
+ * containing `anchor` (defaults to today). Sunday is index 0 to match
+ * DayHours indexing. */
+export function weekDates(anchor: Date = new Date()): string[] {
+  const a = new Date(anchor);
+  a.setHours(0, 0, 0, 0);
+  const sunday = new Date(a);
+  sunday.setDate(a.getDate() - a.getDay()); // a.getDay() = 0 for Sun
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(sunday);
+    d.setDate(sunday.getDate() + i);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
+  });
+}
+
+/** Map weekday index (0=Sun..6=Sat) for a YYYY-MM-DD string. */
+export function weekdayOf(ymd: string): number {
+  const [y, m, d] = ymd.split("-").map((n) => parseInt(n, 10));
+  return new Date(y, m - 1, d).getDay();
 }
