@@ -323,6 +323,43 @@ function DashboardPage() {
         </div>
       </div>
 
+      {/* Fabrication warnings — the agent SPOKE an identifier we
+       *  can prove no tool returned. The backend already nudged the
+       *  agent to correct itself; we surface it here so the operator
+       *  knows the original "your file number is X" was hallucinated. */}
+      {live.recentFabrications.length > 0 && (
+        <div className="rounded-xl border border-destructive bg-destructive/10">
+          <div className="flex items-center gap-2 border-b border-destructive/40 px-4 py-2">
+            <Sparkles className="h-4 w-4 text-destructive" />
+            <h2 className="text-sm font-semibold text-destructive">
+              {t("fabricationsHeading" as never)}
+            </h2>
+            <span className="ms-2 text-xs text-destructive/80">
+              {live.recentFabrications.length}
+            </span>
+          </div>
+          <ul className="divide-y divide-destructive/30">
+            {live.recentFabrications.slice(0, 5).map((f, i) => (
+              <li key={`${f.ts}-${i}`} className="px-4 py-2 text-xs">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="font-mono font-semibold text-destructive">
+                    {f.kind} → {f.value}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {new Date(f.ts * 1000).toLocaleTimeString(
+                      lang === "ar" ? "ar-EG" : undefined,
+                    )}
+                  </span>
+                </div>
+                <div className="mt-1 text-foreground" dir="auto">
+                  {t("fabricationDetail" as never)}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Tool errors — surfaces silent failures (e.g. agent said
        *  "booked" but create_appointment returned an error). */}
       {live.recentToolResults.some((r) => !r.ok) && (

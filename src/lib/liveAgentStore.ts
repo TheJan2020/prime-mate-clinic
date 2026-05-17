@@ -39,6 +39,13 @@ export type ToolResultEvent = {
   ts: number;          // unix seconds, client-stamped
 };
 
+export type FabricationEvent = {
+  call_id: string;
+  kind: "file_number" | "appointment_id";
+  value: string;
+  ts: number;          // unix seconds, client-stamped
+};
+
 type State = {
   wsConnected: boolean;
   liveCalls: Record<string, LiveCall>;
@@ -50,6 +57,11 @@ type State = {
    * "the agent said it booked but the tool returned an error" failure
    * is visible while the call is still live. */
   recentToolResults: ToolResultEvent[];
+  /** Fabrication warnings — emitted by the backend when the agent
+   * SPEAKS a file_number / appointment_id that wasn't actually
+   * returned by any tool on this call. Kept across calls until the
+   * page is refreshed so the user can spot the pattern. */
+  recentFabrications: FabricationEvent[];
 };
 
 type Listener = () => void;
@@ -59,6 +71,7 @@ let state: State = {
   liveCalls: {},
   recentMutations: [],
   recentToolResults: [],
+  recentFabrications: [],
 };
 const listeners = new Set<Listener>();
 let ws: WebSocket | null = null;
@@ -176,6 +189,19 @@ function applyEvent(raw: unknown) {
           },
         };
       });
+      return;
+    }
+    case "fabrication": {
+      const event: FabricationEvent = {
+        call_id: m.call_id,
+        kind:    m.kind,
+        value:   m.value,
+        ts:      Math.floor(Date.now() / 1000),
+      };
+      setState((s) => ({
+        ...s,
+        recentFabrications: [event, ...s.recentFabrications].slice(0, 20),
+      }));
       return;
     }
     case "tool_result": {
