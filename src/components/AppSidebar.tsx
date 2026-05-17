@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Home,
@@ -141,8 +141,13 @@ function CollapsibleGroup({ item, currentPath }: CollapsibleGroupProps) {
   // Auto-open whenever a child is the active route; lets the user toggle.
   const childActive = currentPath.startsWith(item.matchPrefix);
   const [open, setOpen] = useState<boolean>(childActive);
-  // If route changes to a child while collapsed, expand again.
-  if (childActive && !open) setTimeout(() => setOpen(true), 0);
+  // If the route changes to a child after mount (e.g. nav-back) make sure
+  // the group expands again. Effect dependencies on childActive only — we
+  // don't auto-close when navigating *away* so the user's manual toggle
+  // sticks.
+  useEffect(() => {
+    if (childActive) setOpen(true);
+  }, [childActive]);
 
   return (
     <SidebarMenuItem>

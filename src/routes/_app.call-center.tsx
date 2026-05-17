@@ -1,10 +1,15 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 
-// Visiting /call-center directly should land on the first sub-page. The
-// sidebar shows the Call Center group as a collapsible parent (not a link),
-// so this redirect just covers manual URL entry or stale bookmarks.
+// Parent layout for /call-center/* — must render an <Outlet/> so the
+// sub-routes (knowledge-base, persona) actually appear. The redirect only
+// fires when the URL is EXACTLY /call-center (no sub-path), otherwise it
+// would loop indefinitely on every child navigation.
 export const Route = createFileRoute("/_app/call-center")({
-  beforeLoad: () => {
-    throw redirect({ to: "/call-center/knowledge-base" });
+  beforeLoad: ({ location }) => {
+    const p = location.pathname.replace(/\/+$/, "");
+    if (p === "/call-center") {
+      throw redirect({ to: "/call-center/knowledge-base" });
+    }
   },
+  component: () => <Outlet />,
 });
