@@ -21,7 +21,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/lib/i18n";
 import {
-  SEED_DEPARTMENTS, SEED_PROVIDERS, useDemoCollection, nextId,
+  SEED_DEPARTMENTS, SEED_PROVIDERS, useDemoCollection, nextId, localized,
   type Department, type Provider,
 } from "@/lib/demoStore";
 
@@ -30,7 +30,7 @@ export const Route = createFileRoute("/_app/clinics")({
 });
 
 function ClinicsPage() {
-  const { t } = useApp();
+  const { t, lang } = useApp();
   const { items, setAll, reset } =
     useDemoCollection<Department>("departments", SEED_DEPARTMENTS);
   const { items: providers } =
@@ -58,8 +58,11 @@ function ClinicsPage() {
     const blank: Department = {
       id: nextId("DEP", items),
       name: "",
+      name_ar: "",
       specialty: "",
+      specialty_ar: "",
       location: "",
+      location_ar: "",
       head_id: null,
       active: true,
     };
@@ -162,9 +165,9 @@ function ClinicsPage() {
                 return (
                   <tr key={d.id}>
                     <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{d.id}</td>
-                    <td className="px-4 py-2 font-medium text-foreground">{d.name}</td>
-                    <td className="px-4 py-2 text-muted-foreground">{d.specialty}</td>
-                    <td className="px-4 py-2 text-muted-foreground">{d.location}</td>
+                    <td className="px-4 py-2 font-medium text-foreground">{localized(d.name, d.name_ar, lang)}</td>
+                    <td className="px-4 py-2 text-muted-foreground">{localized(d.specialty, d.specialty_ar, lang)}</td>
+                    <td className="px-4 py-2 text-muted-foreground">{localized(d.location, d.location_ar, lang)}</td>
                     <td className="px-4 py-2">
                       {head ? (
                         <Link
@@ -172,7 +175,7 @@ function ClinicsPage() {
                           hash={head.id}
                           className="font-medium text-primary hover:underline"
                         >
-                          {head.name}
+                          {localized(head.name, head.name_ar, lang)}
                         </Link>
                       ) : (
                         <span className="text-xs italic text-muted-foreground">{t("unassigned")}</span>
@@ -214,14 +217,23 @@ function ClinicsPage() {
                   <span className="text-sm text-muted-foreground">{draft.active ? t("active") : t("inactive")}</span>
                 </div>
               </Field>
-              <Field label={t("name")} className="col-span-2">
+              <Field label={t("name")}>
                 <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+              </Field>
+              <Field label={t("nameAr")}>
+                <Input dir="rtl" value={draft.name_ar} onChange={(e) => setDraft({ ...draft, name_ar: e.target.value })} />
               </Field>
               <Field label={t("specialty")}>
                 <Input value={draft.specialty} onChange={(e) => setDraft({ ...draft, specialty: e.target.value })} />
               </Field>
+              <Field label={t("specialtyAr")}>
+                <Input dir="rtl" value={draft.specialty_ar} onChange={(e) => setDraft({ ...draft, specialty_ar: e.target.value })} />
+              </Field>
               <Field label={t("location")}>
                 <Input value={draft.location} onChange={(e) => setDraft({ ...draft, location: e.target.value })} />
+              </Field>
+              <Field label={t("locationAr")}>
+                <Input dir="rtl" value={draft.location_ar} onChange={(e) => setDraft({ ...draft, location_ar: e.target.value })} />
               </Field>
               <Field label={t("head")} className="col-span-2">
                 <Select
@@ -233,7 +245,7 @@ function ClinicsPage() {
                     <SelectItem value="__none__">{t("none")}</SelectItem>
                     {headOptions.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name} <span className="text-muted-foreground">· {p.specialty}</span>
+                        {localized(p.name, p.name_ar, lang)} <span className="text-muted-foreground">· {localized(p.specialty, p.specialty_ar, lang)}</span>
                       </SelectItem>
                     ))}
                   </SelectContent>

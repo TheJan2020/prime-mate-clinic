@@ -27,7 +27,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useApp } from "@/lib/i18n";
 import {
-  SEED_PROVIDERS, useDemoCollection, nextId,
+  SEED_PROVIDERS, useDemoCollection, nextId, localized,
   type Provider, type ProviderRole,
 } from "@/lib/demoStore";
 
@@ -38,7 +38,7 @@ export const Route = createFileRoute("/_app/providers")({
 const ROLE_ORDER: ProviderRole[] = ["doctor", "nurse", "tech", "admin"];
 
 function ProvidersPage() {
-  const { t } = useApp();
+  const { t, lang } = useApp();
   const { items, setAll, reset } = useDemoCollection<Provider>(
     "providers",
     SEED_PROVIDERS,
@@ -76,8 +76,10 @@ function ProvidersPage() {
     const blank: Provider = {
       id: nextId("PRV", items),
       name: "",
+      name_ar: "",
       role: "doctor",
       specialty: "",
+      specialty_ar: "",
       email: "",
       phone: "",
       active: true,
@@ -199,9 +201,9 @@ function ProvidersPage() {
                       className={`transition-shadow ${highlightedId === p.id ? "ring-2 ring-primary" : ""}`}
                     >
                       <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{p.id}</td>
-                      <td className="px-4 py-2 font-medium text-foreground">{p.name}</td>
+                      <td className="px-4 py-2 font-medium text-foreground">{localized(p.name, p.name_ar, lang)}</td>
                       <td className="px-4 py-2"><RolePill role={p.role} /></td>
-                      <td className="px-4 py-2 text-muted-foreground">{p.specialty}</td>
+                      <td className="px-4 py-2 text-muted-foreground">{localized(p.specialty, p.specialty_ar, lang)}</td>
                       <td className="px-4 py-2 text-muted-foreground">{p.email}</td>
                       <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{p.phone}</td>
                       <td className="px-4 py-2"><StatusPill active={p.active} /></td>
@@ -244,17 +246,23 @@ function ProvidersPage() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label={t("name")} className="col-span-2">
+              <Field label={t("name")}>
                 <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+              </Field>
+              <Field label={t("nameAr")}>
+                <Input dir="rtl" value={draft.name_ar} onChange={(e) => setDraft({ ...draft, name_ar: e.target.value })} />
               </Field>
               <Field label={t("specialty")}>
                 <Input value={draft.specialty} onChange={(e) => setDraft({ ...draft, specialty: e.target.value })} />
               </Field>
-              <Field label={t("phone")}>
-                <Input value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
+              <Field label={t("specialtyAr")}>
+                <Input dir="rtl" value={draft.specialty_ar} onChange={(e) => setDraft({ ...draft, specialty_ar: e.target.value })} />
               </Field>
-              <Field label={t("email")} className="col-span-2">
-                <Input value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
+              <Field label={t("phone")}>
+                <Input dir="ltr" value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} placeholder="+9665X XXX XXXX" />
+              </Field>
+              <Field label={t("email")}>
+                <Input dir="ltr" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
               </Field>
               <Field label={t("active")} className="col-span-2">
                 <div className="flex items-center gap-2">

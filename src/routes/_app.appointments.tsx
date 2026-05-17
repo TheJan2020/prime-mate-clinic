@@ -22,10 +22,10 @@ import {
 } from "@/components/ui/select";
 import { useApp } from "@/lib/i18n";
 import {
-  SEED_DEPARTMENTS, SEED_PROVIDERS, getSeedAppointments,
-  useDemoCollection, nextId,
+  SEED_DEPARTMENTS, SEED_PROVIDERS, SEED_PATIENTS, getSeedAppointments,
+  useDemoCollection, nextId, localized,
   type Appointment, type AppointmentStatus,
-  type Department, type Provider,
+  type Department, type Provider, type Patient,
 } from "@/lib/demoStore";
 
 export const Route = createFileRoute("/_app/appointments")({
@@ -63,6 +63,8 @@ function AppointmentsPage() {
     useDemoCollection<Department>("departments", SEED_DEPARTMENTS);
   const { items: providers } =
     useDemoCollection<Provider>("providers", SEED_PROVIDERS);
+  const { items: patients } =
+    useDemoCollection<Patient>("patients", SEED_PATIENTS);
 
   const deptById = useMemo(() => {
     const map = new Map<string, Department>();
@@ -116,7 +118,9 @@ function AppointmentsPage() {
     at.setHours(10, 0, 0, 0);
     const blank: Appointment = {
       id: nextId("APT", items),
+      patient_id: null,
       patient_name: "",
+      patient_name_ar: "",
       patient_phone: "",
       department_id: departments[0]?.id ?? null,
       provider_id: providers.find((p) => p.role === "doctor")?.id ?? null,
@@ -290,13 +294,13 @@ function AppointmentsPage() {
                       <div className="text-xs text-muted-foreground">{day}</div>
                     </td>
                     <td className="px-4 py-2">
-                      <div className="font-medium text-foreground">{a.patient_name}</div>
-                      <div className="font-mono text-xs text-muted-foreground">{a.patient_phone}</div>
+                      <div className="font-medium text-foreground">{localized(a.patient_name, a.patient_name_ar, lang)}</div>
+                      <div className="font-mono text-xs text-muted-foreground" dir="ltr">{a.patient_phone}</div>
                     </td>
                     <td className="px-4 py-2">
                       {dept ? (
                         <Link to="/clinics" hash={dept.id} className="font-medium text-primary hover:underline">
-                          {dept.name}
+                          {localized(dept.name, dept.name_ar, lang)}
                         </Link>
                       ) : (
                         <span className="text-xs italic text-muted-foreground">{t("unassigned")}</span>
@@ -305,7 +309,7 @@ function AppointmentsPage() {
                     <td className="px-4 py-2">
                       {provider ? (
                         <Link to="/providers" hash={provider.id} className="font-medium text-primary hover:underline">
-                          {provider.name}
+                          {localized(provider.name, provider.name_ar, lang)}
                         </Link>
                       ) : (
                         <span className="text-xs italic text-muted-foreground">{t("unassigned")}</span>
@@ -352,11 +356,44 @@ function AppointmentsPage() {
                   </SelectContent>
                 </Select>
               </Field>
-              <Field label={t("patientName")} className="col-span-2">
-                <Input value={draft.patient_name} onChange={(e) => setDraft({ ...draft, patient_name: e.target.value })} />
+              <Field label={t("patient")} className="col-span-2">
+                <Select
+                  value={draft.patient_id ?? "__custom__"}
+                  onValueChange={(v) => {
+                    if (v === "__custom__") {
+                      setDraft({ ...draft, patient_id: null });
+                      return;
+                    }
+                    const p = patients.find((x) => x.id === v);
+                    if (!p) return;
+                    setDraft({
+                      ...draft,
+                      patient_id: p.id,
+                      patient_name: p.name,
+                      patient_name_ar: p.name_ar,
+                      patient_phone: p.phone,
+                    });
+                  }}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__custom__">{t("none")} ({t("patientName").toLowerCase()})</SelectItem>
+                    {patients.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {localized(p.name, p.name_ar, lang)} <span className="text-muted-foreground">· {p.phone}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label={t("patientName")}>
+                <Input value={draft.patient_name} onChange={(e) => setDraft({ ...draft, patient_name: e.target.value, patient_id: null })} />
+              </Field>
+              <Field label={t("nameAr")}>
+                <Input dir="rtl" value={draft.patient_name_ar} onChange={(e) => setDraft({ ...draft, patient_name_ar: e.target.value, patient_id: null })} />
               </Field>
               <Field label={t("patientPhone")} className="col-span-2">
-                <Input value={draft.patient_phone} onChange={(e) => setDraft({ ...draft, patient_phone: e.target.value })} />
+                <Input dir="ltr" value={draft.patient_phone} onChange={(e) => setDraft({ ...draft, patient_phone: e.target.value, patient_id: null })} placeholder="+9665X XXX XXXX" />
               </Field>
               <Field label={t("department")}>
                 <Select
@@ -367,7 +404,7 @@ function AppointmentsPage() {
                   <SelectContent>
                     <SelectItem value="__none__">{t("none")}</SelectItem>
                     {departments.filter((d) => d.active).map((d) => (
-                      <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                      <SelectItem key={d.id} value={d.id}>{localized(d.name, d.name_ar, lang)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -382,7 +419,7 @@ function AppointmentsPage() {
                     <SelectItem value="__none__">{t("none")}</SelectItem>
                     {providers.filter((p) => p.active).map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name} <span className="text-muted-foreground">· {p.specialty}</span>
+                        {localized(p.name, p.name_ar, lang)} <span className="text-muted-foreground">· {localized(p.specialty, p.specialty_ar, lang)}</span>
                       </SelectItem>
                     ))}
                   </SelectContent>

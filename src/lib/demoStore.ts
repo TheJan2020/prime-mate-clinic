@@ -1,7 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
+import type { Lang } from "@/lib/i18n";
 
 const STORAGE_PREFIX = "pwdemo:clinic";
-const VERSION = 1;
+// Bump when a seed schema changes in a non-additive way (e.g. adding required
+// fields). Old localStorage entries are then ignored and seeds re-applied.
+const VERSION = 2;
 const CHANGE_EVENT = "pwdemo:clinic:data-change";
 
 const storageKey = (key: string) => `${STORAGE_PREFIX}:${key}:v${VERSION}`;
@@ -100,14 +103,26 @@ export function useDemoCollection<T>(
 }
 
 // ============================================================================
+// Localization helper — fall through to the English value when the Arabic
+// version isn't set (lets the user add new rows without forcing both).
+// ============================================================================
+
+export function localized(en: string, ar: string | undefined | null, lang: Lang): string {
+  return lang === "ar" && ar && ar.trim() ? ar : en;
+}
+
+// ============================================================================
 // Entity types
 // ============================================================================
 
 export type Department = {
   id: string;
   name: string;
+  name_ar: string;
   specialty: string;
+  specialty_ar: string;
   location: string;
+  location_ar: string;
   head_id: string | null; // → Provider.id
   active: boolean;
 };
@@ -117,8 +132,10 @@ export type ProviderRole = "doctor" | "nurse" | "tech" | "admin";
 export type Provider = {
   id: string;
   name: string;
+  name_ar: string;
   role: ProviderRole;
   specialty: string;
+  specialty_ar: string;
   email: string;
   phone: string;
   active: boolean;
@@ -132,7 +149,9 @@ export type AppointmentStatus =
 
 export type Appointment = {
   id: string;
+  patient_id: string | null;       // → Patient.id (nullable for ad-hoc bookings)
   patient_name: string;
+  patient_name_ar: string;
   patient_phone: string;
   department_id: string | null;
   provider_id: string | null;
@@ -143,31 +162,156 @@ export type Appointment = {
   notes: string;
 };
 
+export type Gender = "male" | "female";
+
+export type Patient = {
+  id: string;
+  name: string;
+  name_ar: string;
+  gender: Gender;
+  date_of_birth: string;   // YYYY-MM-DD
+  phone: string;
+  email: string;
+  city: string;
+  city_ar: string;
+  notes: string;
+};
+
 // ============================================================================
 // Seed data
 // ============================================================================
 
 export const SEED_PROVIDERS: Provider[] = [
-  { id: "PRV-001", name: "Dr. Layla Hassan",   role: "doctor", specialty: "Pediatrics",   email: "l.hassan@primemate.clinic",   phone: "+961 70 111 001", active: true },
-  { id: "PRV-002", name: "Dr. Omar Saleh",     role: "doctor", specialty: "Cardiology",   email: "o.saleh@primemate.clinic",    phone: "+961 70 111 002", active: true },
-  { id: "PRV-003", name: "Dr. Fatima Rizk",    role: "doctor", specialty: "Dermatology",  email: "f.rizk@primemate.clinic",     phone: "+961 70 111 003", active: true },
-  { id: "PRV-004", name: "Dr. James Carter",   role: "doctor", specialty: "Dentistry",    email: "j.carter@primemate.clinic",   phone: "+961 70 111 004", active: true },
-  { id: "PRV-005", name: "Dr. Priya Nair",     role: "doctor", specialty: "Family Medicine", email: "p.nair@primemate.clinic",  phone: "+961 70 111 005", active: true },
-  { id: "PRV-006", name: "Dr. Mohammed Khalil", role: "doctor", specialty: "Orthopedics", email: "m.khalil@primemate.clinic",  phone: "+961 70 111 006", active: true },
-  { id: "PRV-007", name: "Nurse Sara Aoun",    role: "nurse",  specialty: "Triage",       email: "s.aoun@primemate.clinic",     phone: "+961 70 111 007", active: true },
-  { id: "PRV-008", name: "Nurse Karim Daher",  role: "nurse",  specialty: "Pediatrics",   email: "k.daher@primemate.clinic",    phone: "+961 70 111 008", active: true },
-  { id: "PRV-009", name: "Tech Rana Mansour",  role: "tech",   specialty: "Radiology",    email: "r.mansour@primemate.clinic",  phone: "+961 70 111 009", active: true },
-  { id: "PRV-010", name: "Admin Hadi Tabet",   role: "admin",  specialty: "Front Desk",   email: "h.tabet@primemate.clinic",    phone: "+961 70 111 010", active: true },
+  { id: "PRV-001", name: "Dr. Layla Hassan",     name_ar: "د. ليلى حسن",     role: "doctor", specialty: "Pediatrics",      specialty_ar: "طب الأطفال",       email: "l.hassan@primemate.clinic",   phone: "+966 50 111 0001", active: true },
+  { id: "PRV-002", name: "Dr. Omar Saleh",       name_ar: "د. عمر صالح",     role: "doctor", specialty: "Cardiology",      specialty_ar: "طب القلب",          email: "o.saleh@primemate.clinic",    phone: "+966 50 111 0002", active: true },
+  { id: "PRV-003", name: "Dr. Fatima Rizk",      name_ar: "د. فاطمة رزق",   role: "doctor", specialty: "Dermatology",     specialty_ar: "الأمراض الجلدية",  email: "f.rizk@primemate.clinic",     phone: "+966 50 111 0003", active: true },
+  { id: "PRV-004", name: "Dr. James Carter",     name_ar: "د. جيمس كارتر",  role: "doctor", specialty: "Dentistry",       specialty_ar: "طب الأسنان",        email: "j.carter@primemate.clinic",   phone: "+966 50 111 0004", active: true },
+  { id: "PRV-005", name: "Dr. Priya Nair",       name_ar: "د. بريا نائير",  role: "doctor", specialty: "Family Medicine", specialty_ar: "طب الأسرة",         email: "p.nair@primemate.clinic",     phone: "+966 50 111 0005", active: true },
+  { id: "PRV-006", name: "Dr. Mohammed Khalil",  name_ar: "د. محمد خليل",   role: "doctor", specialty: "Orthopedics",     specialty_ar: "جراحة العظام",      email: "m.khalil@primemate.clinic",   phone: "+966 50 111 0006", active: true },
+  { id: "PRV-007", name: "Nurse Sara Aoun",      name_ar: "الممرضة سارة عون", role: "nurse",  specialty: "Triage",          specialty_ar: "الفرز الطبي",       email: "s.aoun@primemate.clinic",     phone: "+966 50 111 0007", active: true },
+  { id: "PRV-008", name: "Nurse Karim Daher",    name_ar: "الممرض كريم ضاهر", role: "nurse",  specialty: "Pediatrics",      specialty_ar: "طب الأطفال",       email: "k.daher@primemate.clinic",    phone: "+966 50 111 0008", active: true },
+  { id: "PRV-009", name: "Tech Rana Mansour",    name_ar: "الفنية رنا منصور", role: "tech",   specialty: "Radiology",       specialty_ar: "الأشعة",            email: "r.mansour@primemate.clinic",  phone: "+966 50 111 0009", active: true },
+  { id: "PRV-010", name: "Admin Hadi Tabet",     name_ar: "الإداري هادي ثابت", role: "admin",  specialty: "Front Desk",      specialty_ar: "الاستقبال",         email: "h.tabet@primemate.clinic",    phone: "+966 50 111 0010", active: true },
 ];
 
 export const SEED_DEPARTMENTS: Department[] = [
-  { id: "DEP-001", name: "Al Noor Pediatrics",       specialty: "Pediatrics",       location: "Beirut · Hamra",   head_id: "PRV-001", active: true },
-  { id: "DEP-002", name: "Cairo Cardio Center",      specialty: "Cardiology",       location: "Beirut · Verdun",  head_id: "PRV-002", active: true },
-  { id: "DEP-003", name: "Smile Dental",             specialty: "Dentistry",        location: "Jounieh",          head_id: "PRV-004", active: true },
-  { id: "DEP-004", name: "Wellness Family Clinic",   specialty: "Family Medicine",  location: "Antelias",         head_id: "PRV-005", active: true },
-  { id: "DEP-005", name: "SkinScience Dermatology",  specialty: "Dermatology",      location: "Beirut · Ashrafieh", head_id: "PRV-003", active: true },
-  { id: "DEP-006", name: "BoneCare Orthopedics",     specialty: "Orthopedics",      location: "Sin El Fil",       head_id: "PRV-006", active: true },
+  { id: "DEP-001", name: "Al Noor Pediatrics",       name_ar: "عيادة النور لطب الأطفال",    specialty: "Pediatrics",      specialty_ar: "طب الأطفال",      location: "Riyadh · Olaya",      location_ar: "الرياض · العليا",   head_id: "PRV-001", active: true },
+  { id: "DEP-002", name: "Cairo Cardio Center",      name_ar: "مركز القاهرة للقلب",         specialty: "Cardiology",      specialty_ar: "طب القلب",         location: "Riyadh · Al Malaz",   location_ar: "الرياض · الملز",    head_id: "PRV-002", active: true },
+  { id: "DEP-003", name: "Smile Dental",             name_ar: "عيادة سمايل لطب الأسنان",    specialty: "Dentistry",       specialty_ar: "طب الأسنان",       location: "Jeddah · Al Hamra",   location_ar: "جدة · الحمراء",      head_id: "PRV-004", active: true },
+  { id: "DEP-004", name: "Wellness Family Clinic",   name_ar: "عيادة العافية للأسرة",       specialty: "Family Medicine", specialty_ar: "طب الأسرة",        location: "Dammam · Al Faisaliah", location_ar: "الدمام · الفيصلية", head_id: "PRV-005", active: true },
+  { id: "DEP-005", name: "SkinScience Dermatology",  name_ar: "سكين ساينس للأمراض الجلدية", specialty: "Dermatology",     specialty_ar: "الأمراض الجلدية",  location: "Riyadh · Al Yasmin",  location_ar: "الرياض · الياسمين",  head_id: "PRV-003", active: true },
+  { id: "DEP-006", name: "BoneCare Orthopedics",     name_ar: "بون كير لجراحة العظام",      specialty: "Orthopedics",     specialty_ar: "جراحة العظام",     location: "Jeddah · Al Salama",  location_ar: "جدة · السلامة",     head_id: "PRV-006", active: true },
 ];
+
+// ----- Patients seed --------------------------------------------------------
+// 50 patients spread across Saudi cities, with Saudi mobile numbers.
+
+const SAUDI_CITIES: Array<{ en: string; ar: string }> = [
+  { en: "Riyadh",       ar: "الرياض" },
+  { en: "Jeddah",       ar: "جدة" },
+  { en: "Dammam",       ar: "الدمام" },
+  { en: "Mecca",        ar: "مكة المكرمة" },
+  { en: "Medina",       ar: "المدينة المنورة" },
+  { en: "Khobar",       ar: "الخبر" },
+  { en: "Tabuk",        ar: "تبوك" },
+  { en: "Abha",         ar: "أبها" },
+  { en: "Taif",         ar: "الطائف" },
+  { en: "Buraydah",     ar: "بريدة" },
+];
+
+const PATIENT_NAMES: Array<{ en: string; ar: string; gender: Gender }> = [
+  { en: "Sara Al-Otaibi",    ar: "سارة العتيبي",     gender: "female" },
+  { en: "Mohammed Al-Qahtani", ar: "محمد القحطاني",  gender: "male"   },
+  { en: "Fatima Al-Harbi",   ar: "فاطمة الحربي",     gender: "female" },
+  { en: "Omar Al-Ghamdi",    ar: "عمر الغامدي",      gender: "male"   },
+  { en: "Layla Al-Shehri",   ar: "ليلى الشهري",      gender: "female" },
+  { en: "Ahmad Al-Dosari",   ar: "أحمد الدوسري",     gender: "male"   },
+  { en: "Nour Al-Anzi",      ar: "نور العنزي",       gender: "female" },
+  { en: "Karim Al-Mutairi",  ar: "كريم المطيري",     gender: "male"   },
+  { en: "Rana Al-Subaie",    ar: "رنا السبيعي",      gender: "female" },
+  { en: "Hadi Al-Zahrani",   ar: "هادي الزهراني",    gender: "male"   },
+  { en: "Yara Al-Saadi",     ar: "يارا السعدي",      gender: "female" },
+  { en: "Ziad Al-Faraj",     ar: "زياد الفرج",       gender: "male"   },
+  { en: "Mira Al-Khaldi",    ar: "ميرا الخالدي",     gender: "female" },
+  { en: "Tarek Al-Maliki",   ar: "طارق المالكي",     gender: "male"   },
+  { en: "Salim Al-Asiri",    ar: "سالم العسيري",     gender: "male"   },
+  { en: "Dana Al-Rashidi",   ar: "دانة الرشيدي",     gender: "female" },
+  { en: "Bilal Al-Juhani",   ar: "بلال الجهني",      gender: "male"   },
+  { en: "Maya Al-Sahli",     ar: "مايا السهلي",      gender: "female" },
+  { en: "Jamil Al-Balawi",   ar: "جميل البلوي",      gender: "male"   },
+  { en: "Hala Al-Najjar",    ar: "هالة النجار",      gender: "female" },
+  { en: "Khalid Al-Amri",    ar: "خالد العامري",     gender: "male"   },
+  { en: "Reem Al-Khaled",    ar: "ريم الخالد",       gender: "female" },
+  { en: "Faisal Al-Hajri",   ar: "فيصل الهاجري",     gender: "male"   },
+  { en: "Aisha Al-Mansour",  ar: "عائشة المنصور",    gender: "female" },
+  { en: "Hassan Al-Sayed",   ar: "حسن السيد",        gender: "male"   },
+  { en: "Ghada Al-Nasser",   ar: "غادة الناصر",      gender: "female" },
+  { en: "Sultan Al-Faisal",  ar: "سلطان الفيصل",     gender: "male"   },
+  { en: "Lina Al-Saleh",     ar: "لينا الصالح",      gender: "female" },
+  { en: "Rashid Al-Thani",   ar: "راشد الثاني",      gender: "male"   },
+  { en: "Nadia Al-Marri",    ar: "نادية المري",      gender: "female" },
+  { en: "Bandar Al-Sudairi", ar: "بندر السديري",     gender: "male"   },
+  { en: "Hessa Al-Romaihi",  ar: "حصة الرميحي",      gender: "female" },
+  { en: "Talal Al-Dossari",  ar: "طلال الدوسري",     gender: "male"   },
+  { en: "Munira Al-Saud",    ar: "منيرة السعود",     gender: "female" },
+  { en: "Adel Al-Suwaidi",   ar: "عادل السويدي",     gender: "male"   },
+  { en: "Wafa Al-Kuwari",    ar: "وفاء الكواري",     gender: "female" },
+  { en: "Naif Al-Ajmi",      ar: "نايف العجمي",      gender: "male"   },
+  { en: "Sahar Al-Kindi",    ar: "سحر الكندي",       gender: "female" },
+  { en: "Majed Al-Khalifa",  ar: "ماجد آل خليفة",    gender: "male"   },
+  { en: "Lulwa Al-Sabah",    ar: "لولوة الصباح",     gender: "female" },
+  { en: "Saud Al-Otaibi",    ar: "سعود العتيبي",     gender: "male"   },
+  { en: "Norah Al-Harbi",    ar: "نورة الحربي",      gender: "female" },
+  { en: "Yousef Al-Ghamdi",  ar: "يوسف الغامدي",     gender: "male"   },
+  { en: "Asma Al-Shehri",    ar: "أسماء الشهري",     gender: "female" },
+  { en: "Ibrahim Al-Dosari", ar: "إبراهيم الدوسري",  gender: "male"   },
+  { en: "Rawan Al-Mutairi",  ar: "روان المطيري",     gender: "female" },
+  { en: "Mansour Al-Subaie", ar: "منصور السبيعي",    gender: "male"   },
+  { en: "Bushra Al-Zahrani", ar: "بشرى الزهراني",    gender: "female" },
+  { en: "Tareq Al-Saadi",    ar: "طارق السعدي",      gender: "male"   },
+  { en: "Hind Al-Faraj",     ar: "هند الفرج",        gender: "female" },
+];
+
+function saudiMobile(seed: number): string {
+  // +9665X XXX XXXX — 5 is the mobile prefix; X is a digit.
+  const r = mulberry32(seed);
+  const second = Math.floor(r() * 10);
+  const block1 = Math.floor(r() * 1000).toString().padStart(3, "0");
+  const block2 = Math.floor(r() * 10000).toString().padStart(4, "0");
+  return `+9665${second} ${block1} ${block2}`;
+}
+
+function dobFor(age: number, seed: number): string {
+  // Pick a day-of-year that's stable for a given (age, seed).
+  const r = mulberry32(seed ^ age);
+  const today = new Date();
+  const year = today.getFullYear() - age;
+  const doy = Math.floor(r() * 365);
+  const d = new Date(year, 0, 1 + doy);
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+export const SEED_PATIENTS: Patient[] = PATIENT_NAMES.slice(0, 50).map((p, i) => {
+  const seed = 1000 + i * 7;
+  const r = mulberry32(seed);
+  const city = SAUDI_CITIES[Math.floor(r() * SAUDI_CITIES.length)];
+  const age = 4 + Math.floor(r() * 70); // 4–73 years old
+  const handle = p.en.toLowerCase().replace(/[^a-z]+/g, ".").replace(/^\.+|\.+$/g, "");
+  return {
+    id: `PAT-${String(i + 1).padStart(4, "0")}`,
+    name: p.en,
+    name_ar: p.ar,
+    gender: p.gender,
+    date_of_birth: dobFor(age, seed),
+    phone: saudiMobile(seed),
+    email: `${handle}@example.sa`,
+    city: city.en,
+    city_ar: city.ar,
+    notes: "",
+  };
+});
 
 // ----- Appointments seed factory --------------------------------------------
 // 31-day window (today − 20 … today + 10). Per-day deterministic RNG so rows
@@ -200,15 +344,6 @@ function ymd(d: Date): string {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
-
-const PATIENT_FIRST = [
-  "Sara", "Mohammed", "Fatima", "Omar", "Layla", "Ahmad", "Nour", "Karim",
-  "Rana", "Hadi", "Yara", "Ziad", "Mira", "Tarek", "Salim", "Dana",
-  "Bilal", "Maya", "Jamil", "Hala",
-];
-const PATIENT_LAST = [
-  "A.", "K.", "R.", "S.", "M.", "H.", "T.", "D.", "B.", "N.", "J.", "F.",
-];
 
 export function getSeedAppointments(): Appointment[] {
   const items: Appointment[] = [];
@@ -268,13 +403,16 @@ export function getSeedAppointments(): Appointment[] {
         status = "scheduled";
       }
 
-      const firstName = PATIENT_FIRST[Math.floor(rng() * PATIENT_FIRST.length)];
-      const lastInitial = PATIENT_LAST[Math.floor(rng() * PATIENT_LAST.length)];
+      // Pick a patient from the seed pool so appointments carry both
+      // bilingual names and consistent phone numbers.
+      const patient = SEED_PATIENTS[Math.floor(rng() * SEED_PATIENTS.length)];
 
       items.push({
         id: `APT-${String(serial).padStart(4, "0")}`,
-        patient_name: `${firstName} ${lastInitial}`,
-        patient_phone: `+961 7${Math.floor(rng() * 9)} ${String(Math.floor(rng() * 900) + 100)} ${String(Math.floor(rng() * 900) + 100)}`,
+        patient_id: patient.id,
+        patient_name: patient.name,
+        patient_name_ar: patient.name_ar,
+        patient_phone: patient.phone,
         department_id: departmentId,
         provider_id: providerId,
         scheduled_at: scheduled.toISOString(),
@@ -292,12 +430,16 @@ export function getSeedAppointments(): Appointment[] {
 
 // ----- Helpers used by the CRUD pages ---------------------------------------
 
-export function nextId(prefix: "DEP" | "PRV" | "APT", items: { id: string }[]): string {
+export function nextId(
+  prefix: "DEP" | "PRV" | "APT" | "PAT",
+  items: { id: string }[],
+): string {
   const max = items.reduce((m, it) => {
-    const match = it.id.match(/^(?:DEP|PRV|APT)-(\d+)$/);
+    const match = it.id.match(/^(?:DEP|PRV|APT|PAT)-(\d+)$/);
     if (!match) return m;
     const n = parseInt(match[1], 10);
     return n > m ? n : m;
   }, 0);
-  return `${prefix}-${String(max + 1).padStart(3, "0")}`;
+  const width = prefix === "PAT" ? 4 : 3;
+  return `${prefix}-${String(max + 1).padStart(width, "0")}`;
 }
