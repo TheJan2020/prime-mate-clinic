@@ -12,6 +12,10 @@ import {
   DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { useApp } from "@/lib/i18n";
+import {
+  SEED_PATIENTS, useDemoCollection,
+  type Patient,
+} from "@/lib/demoStore";
 
 export const Route = createFileRoute("/_app/call-center/whatsapp")({
   component: WhatsAppPage,
@@ -53,9 +57,41 @@ type SendState =
 const CHATS_POLL_MS    = 15_000;
 const MESSAGES_POLL_MS = 5_000;
 
+// Strip a phone number / JID down to digits so two different encodings of
+// the same number compare equal. "+966 50 123 4567" → "966501234567";
+// "9665…@s.whatsapp.net" → "9665…".
+function phoneDigits(s: string | null | undefined): string {
+  return (s || "").replace(/\D+/g, "");
+}
+
+// A Saudi number can be written +966501234567, 966501234567, 0501234567,
+// or 501234567. Match on the last 9 digits (the national number) so all
+// of those forms collapse to the same key.
+function phoneKey(s: string | null | undefined): string {
+  const d = phoneDigits(s);
+  return d.length >= 9 ? d.slice(-9) : d;
+}
+
 function WhatsAppPage() {
   const { t, lang } = useApp();
   const [status, setStatus] = useState<StatusState>({ kind: "loading" });
+
+  // Patients registry — lets us label a chat with the patient's name +
+  // file number whenever the chat's phone matches a patient on record.
+  // useDemoCollection reads from the same localStorage the Patients
+  // page writes, so adding a patient there is reflected here on the
+  // next React tick (the window event fires synchronously).
+  const { items: patients } = useDemoCollection<Patient>("patients", SEED_PATIENTS);
+  const patientByPhone = useMemo(() => {
+    const map = new Map<string, Patient>();
+    for (const p of patients) {
+      const key = phoneKey(p.phone);
+      if (key) map.set(key, p);
+    }
+    return map;
+  }, [patients]);
+  const lookupPatient = (jid: string): Patient | null =>
+    patientByPhone.get(phoneKey(jid)) ?? null;
 
   // Chat list (left pane)
   const [chats, setChats]               = useState<Chat[]>([]);
@@ -303,35 +339,46 @@ function WhatsAppPage() {
             </div>
           ) : (
             <ul className="max-h-[70vh] divide-y divide-border overflow-y-auto">
-              {chats.map((c) => (
-                <li key={c.jid}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedJid(c.jid)}
-                    className={`flex w-full flex-col gap-1 px-4 py-3 text-start text-sm transition-colors ${
-                      selectedJid === c.jid
-                        ? "bg-primary/10"
-                        : "hover:bg-muted/50"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-1.5 truncate font-medium text-foreground" dir="auto">
-                        {c.is_group && <Users className="h-3 w-3 shrink-0 text-muted-foreground" />}
-                        {c.name}
-                      </span>
-                      <span className="shrink-0 text-[10px] font-mono text-muted-foreground">
-                        {c.last_ts ? fmtShortTime(c.last_ts * 1000, lang) : "—"}
-                      </span>
-                    </div>
-                    <div className="line-clamp-1 text-xs text-muted-foreground" dir="auto">
-                      {c.last_from_me && (
-                        <span className="text-emerald-600 dark:text-emerald-400">You: </span>
-                      )}
-                      {c.last_text || "(empty)"}
-                    </div>
-                  </button>
-                </li>
-              ))}
+              {chats.map((c) => {
+                const linked = lookupPatient(c.jid);
+                const displayName = linked
+                  ? (lang === "ar" ? (linked.name_ar || linked.name) : linked.name)
+                  : c.name;
+                return (
+                  <li key={c.jid}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedJid(c.jid)}
+                      className={`flex w-full flex-col gap-1 px-4 py-3 text-start text-sm transition-colors ${
+                        selectedJid === c.jid
+                          ? "bg-primary/10"
+                          : "hover:bg-muted/50"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="flex min-w-0 items-center gap-1.5 truncate font-medium text-foreground" dir="auto">
+                          {c.is_group && <Users className="h-3 w-3 shrink-0 text-muted-foreground" />}
+                          <span className="truncate">{displayName}</span>
+                          {linked && (
+                            <span className="ms-1 shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-emerald-700 dark:text-emerald-400">
+                              {linked.file_number}
+                            </span>
+                          )}
+                        </span>
+                        <span className="shrink-0 text-[10px] font-mono text-muted-foreground">
+                          {c.last_ts ? fmtShortTime(c.last_ts * 1000, lang) : "—"}
+                        </span>
+                      </div>
+                      <div className="line-clamp-1 text-xs text-muted-foreground" dir="auto">
+                        {c.last_from_me && (
+                          <span className="text-emerald-600 dark:text-emerald-400">You: </span>
+                        )}
+                        {c.last_text || "(empty)"}
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -351,13 +398,37 @@ function WhatsAppPage() {
             <>
               <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 truncate text-sm font-semibold text-card-foreground" dir="auto">
-                    {selectedChat?.is_group && <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-                    {selectedChat?.name ?? selectedJid.split("@")[0]}
-                  </div>
-                  <div className="truncate font-mono text-[10px] text-muted-foreground" dir="ltr">
-                    {selectedJid}
-                  </div>
+                  {(() => {
+                    const linkedHeader = lookupPatient(selectedJid);
+                    const displayName = linkedHeader
+                      ? (lang === "ar" ? (linkedHeader.name_ar || linkedHeader.name) : linkedHeader.name)
+                      : (selectedChat?.name ?? selectedJid.split("@")[0]);
+                    return (
+                      <>
+                        <div className="flex items-center gap-1.5 truncate text-sm font-semibold text-card-foreground" dir="auto">
+                          {selectedChat?.is_group && <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                          <span className="truncate">{displayName}</span>
+                          {linkedHeader && (
+                            <Link
+                              to="/patients"
+                              className="ms-1 shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-700 hover:underline dark:text-emerald-400"
+                              title="Open in Patients"
+                            >
+                              {linkedHeader.file_number}
+                            </Link>
+                          )}
+                        </div>
+                        <div className="truncate font-mono text-[10px] text-muted-foreground" dir="ltr">
+                          {selectedJid}
+                          {linkedHeader && linkedHeader.id_number && (
+                            <span className="ms-2 text-muted-foreground/70">
+                              · ID {linkedHeader.id_number}
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
                 {msgsLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
               </div>
