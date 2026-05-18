@@ -25,6 +25,7 @@ import { Route as AppCallCenterWhatsappRouteImport } from './routes/_app.call-ce
 import { Route as AppCallCenterPersonaRouteImport } from './routes/_app.call-center.persona'
 import { Route as AppCallCenterKnowledgeBaseRouteImport } from './routes/_app.call-center.knowledge-base'
 import { Route as AppCallCenterHistoryRouteImport } from './routes/_app.call-center.history'
+import { Route as AppCallCenterDebugRouteImport } from './routes/_app.call-center.debug'
 import { Route as AppCallCenterDashboardRouteImport } from './routes/_app.call-center.dashboard'
 import { Route as AppCallCenterConfigurationRouteImport } from './routes/_app.call-center.configuration'
 
@@ -109,6 +110,11 @@ const AppCallCenterHistoryRoute = AppCallCenterHistoryRouteImport.update({
   path: '/history',
   getParentRoute: () => AppCallCenterRoute,
 } as any)
+const AppCallCenterDebugRoute = AppCallCenterDebugRouteImport.update({
+  id: '/debug',
+  path: '/debug',
+  getParentRoute: () => AppCallCenterRoute,
+} as any)
 const AppCallCenterDashboardRoute = AppCallCenterDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -134,6 +140,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
   '/call-center/configuration': typeof AppCallCenterConfigurationRoute
   '/call-center/dashboard': typeof AppCallCenterDashboardRoute
+  '/call-center/debug': typeof AppCallCenterDebugRoute
   '/call-center/history': typeof AppCallCenterHistoryRoute
   '/call-center/knowledge-base': typeof AppCallCenterKnowledgeBaseRoute
   '/call-center/persona': typeof AppCallCenterPersonaRoute
@@ -153,6 +160,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AppSettingsRoute
   '/call-center/configuration': typeof AppCallCenterConfigurationRoute
   '/call-center/dashboard': typeof AppCallCenterDashboardRoute
+  '/call-center/debug': typeof AppCallCenterDebugRoute
   '/call-center/history': typeof AppCallCenterHistoryRoute
   '/call-center/knowledge-base': typeof AppCallCenterKnowledgeBaseRoute
   '/call-center/persona': typeof AppCallCenterPersonaRoute
@@ -174,6 +182,7 @@ export interface FileRoutesById {
   '/_app/settings': typeof AppSettingsRoute
   '/_app/call-center/configuration': typeof AppCallCenterConfigurationRoute
   '/_app/call-center/dashboard': typeof AppCallCenterDashboardRoute
+  '/_app/call-center/debug': typeof AppCallCenterDebugRoute
   '/_app/call-center/history': typeof AppCallCenterHistoryRoute
   '/_app/call-center/knowledge-base': typeof AppCallCenterKnowledgeBaseRoute
   '/_app/call-center/persona': typeof AppCallCenterPersonaRoute
@@ -195,6 +204,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/call-center/configuration'
     | '/call-center/dashboard'
+    | '/call-center/debug'
     | '/call-center/history'
     | '/call-center/knowledge-base'
     | '/call-center/persona'
@@ -214,6 +224,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/call-center/configuration'
     | '/call-center/dashboard'
+    | '/call-center/debug'
     | '/call-center/history'
     | '/call-center/knowledge-base'
     | '/call-center/persona'
@@ -234,6 +245,7 @@ export interface FileRouteTypes {
     | '/_app/settings'
     | '/_app/call-center/configuration'
     | '/_app/call-center/dashboard'
+    | '/_app/call-center/debug'
     | '/_app/call-center/history'
     | '/_app/call-center/knowledge-base'
     | '/_app/call-center/persona'
@@ -361,6 +373,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCallCenterHistoryRouteImport
       parentRoute: typeof AppCallCenterRoute
     }
+    '/_app/call-center/debug': {
+      id: '/_app/call-center/debug'
+      path: '/debug'
+      fullPath: '/call-center/debug'
+      preLoaderRoute: typeof AppCallCenterDebugRouteImport
+      parentRoute: typeof AppCallCenterRoute
+    }
     '/_app/call-center/dashboard': {
       id: '/_app/call-center/dashboard'
       path: '/dashboard'
@@ -381,6 +400,7 @@ declare module '@tanstack/react-router' {
 interface AppCallCenterRouteChildren {
   AppCallCenterConfigurationRoute: typeof AppCallCenterConfigurationRoute
   AppCallCenterDashboardRoute: typeof AppCallCenterDashboardRoute
+  AppCallCenterDebugRoute: typeof AppCallCenterDebugRoute
   AppCallCenterHistoryRoute: typeof AppCallCenterHistoryRoute
   AppCallCenterKnowledgeBaseRoute: typeof AppCallCenterKnowledgeBaseRoute
   AppCallCenterPersonaRoute: typeof AppCallCenterPersonaRoute
@@ -391,6 +411,7 @@ interface AppCallCenterRouteChildren {
 const AppCallCenterRouteChildren: AppCallCenterRouteChildren = {
   AppCallCenterConfigurationRoute: AppCallCenterConfigurationRoute,
   AppCallCenterDashboardRoute: AppCallCenterDashboardRoute,
+  AppCallCenterDebugRoute: AppCallCenterDebugRoute,
   AppCallCenterHistoryRoute: AppCallCenterHistoryRoute,
   AppCallCenterKnowledgeBaseRoute: AppCallCenterKnowledgeBaseRoute,
   AppCallCenterPersonaRoute: AppCallCenterPersonaRoute,

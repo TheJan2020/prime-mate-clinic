@@ -18,6 +18,7 @@ import {
   ChevronRight,
   MessageCircle,
   FileText,
+  Bug,
 } from "lucide-react";
 import {
   Sidebar,
@@ -81,6 +82,7 @@ export function AppSidebar() {
         { kind: "leaf", key: "knowledgeBase", title: t("knowledgeBase"), url: "/call-center/knowledge-base", icon: BookOpen },
         { kind: "leaf", key: "persona",       title: t("persona"),       url: "/call-center/persona",        icon: UserCircle2 },
         { kind: "leaf", key: "ccConfig",      title: t("configuration"), url: "/call-center/configuration",  icon: Sliders },
+        { kind: "leaf", key: "ccDebug",       title: t("debug" as never), url: "/call-center/debug",       icon: Bug },
       ],
     },
     { kind: "leaf", key: "settings", title: t("settings"), url: "/settings", icon: Settings },

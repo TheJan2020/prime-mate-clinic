@@ -53,6 +53,17 @@ export type FabricationEvent = {
   ts: number;          // unix seconds, client-stamped
 };
 
+/** Real-time log line from any clinic backend module. Streamed by the
+ * Python `_DebugBroadcastHandler` (see live_agent.py) and consumed by
+ * the Call Center → Debug page. */
+export type DebugEvent = {
+  ts:      number;     // unix seconds, server-stamped (record.created)
+  level:   string;     // "INFO" / "WARNING" / "ERROR" / "DEBUG"
+  logger:  string;     // e.g. "clinic_live_agent"
+  message: string;
+  exc:     string | null;
+};
+
 /** Supervisor flag — set by the backend's `flag_for_supervisor` tool call
  *  or by an auto-detect pass. Stored per call_id; cleared by the operator
  *  via POST /agent/calls/{id}/acknowledge_flag. */
@@ -80,6 +91,10 @@ type State = {
    * returned by any tool on this call. Kept across calls until the
    * page is refreshed so the user can spot the pattern. */
   recentFabrications: FabricationEvent[];
+  /** Real-time debug log from the clinic backend. Capped at
+   * DEBUG_BUFFER_MAX so a long-running session doesn't bloat memory.
+   * The Call Center → Debug page renders this directly. */
+  debugEvents: DebugEvent[];
   /** Active supervisor flags keyed by call_id. A flagged call paints
    * red on the Dashboard with the reason; the operator clicks
    * Acknowledge to clear which calls POST … /acknowledge_flag and
@@ -90,6 +105,8 @@ type State = {
 
 type Listener = () => void;
 
+const DEBUG_BUFFER_MAX = 1000;
+
 let state: State = {
   wsConnected: false,
   liveCalls: {},
@@ -97,6 +114,7 @@ let state: State = {
   recentToolResults: [],
   recentFabrications: [],
   supervisorFlags: {},
+  debugEvents: [],
 };
 const listeners = new Set<Listener>();
 let ws: WebSocket | null = null;
@@ -255,6 +273,23 @@ function applyEvent(raw: unknown) {
       });
       return;
     }
+    case "debug": {
+      const event: DebugEvent = {
+        ts:      Number(m.ts) || (Date.now() / 1000),
+        level:   String(m.level || "INFO"),
+        logger:  String(m.logger || ""),
+        message: String(m.message ?? ""),
+        exc:     m.exc ? String(m.exc) : null,
+      };
+      setState((s) => {
+        // Append + cap. Sliced from the END so we keep the most recent.
+        const next = s.debugEvents.length >= DEBUG_BUFFER_MAX
+          ? s.debugEvents.slice(-(DEBUG_BUFFER_MAX - 1))
+          : s.debugEvents;
+        return { ...s, debugEvents: [...next, event] };
+      });
+      return;
+    }
     case "fabrication": {
       const event: FabricationEvent = {
         call_id: m.call_id,
@@ -385,6 +420,12 @@ export function consumeMutation(event: ToolMutationEvent) {
     ...s,
     recentMutations: s.recentMutations.filter((e) => e !== event),
   }));
+}
+
+/** Drop every accumulated debug event. Used by the Debug page's Clear
+ * button when the operator wants a fresh view. */
+export function clearDebugEvents() {
+  setState((s) => ({ ...s, debugEvents: [] }));
 }
 
 /** React hook — re-renders the component on any store change. Boots the
