@@ -447,15 +447,17 @@ function WhatsAppPage() {
                           )}
                         </div>
                         <div className="truncate font-mono text-[10px] text-muted-foreground" dir="ltr">
-                          {/* Strip the JID suffix so the operator sees a
-                              clean number — "9665…" not
-                              "9665…@s.whatsapp.net". For LIDs there's
-                              nothing meaningful to show on a second
-                              line (the digits already render above), so
-                              we hide it entirely. */}
-                          {selectedChat?.is_lid
-                            ? null
-                            : selectedJid.split("@")[0]}
+                          {/* Show the raw identifier without the JID
+                              suffix. For phone-JID chats this is the
+                              actual phone ("9665…"). For LID chats
+                              this is the LID digits ("233908…"), but
+                              prefixed with "LID:" so the operator
+                              doesn't mistake it for a phone number
+                              they could dial / message externally. */}
+                          {selectedChat?.is_lid && (
+                            <span className="text-muted-foreground/60">LID: </span>
+                          )}
+                          {selectedJid.split("@")[0]}
                           {linkedHeader && linkedHeader.id_number && (
                             <span className="ms-2 text-muted-foreground/70">
                               · ID {linkedHeader.id_number}
