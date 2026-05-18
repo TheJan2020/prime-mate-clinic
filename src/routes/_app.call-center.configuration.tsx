@@ -409,6 +409,11 @@ type EscalationConfig = {
   // WhatsApp via WasenderApi. Per-session API key — the WhatsApp number
   // must already be paired on the WasenderApi dashboard.
   wasender_api_key:    string;
+  // Account-level Personal Access Token (Settings → Personal Access
+  // Tokens). REQUIRED for the inbox: /whatsapp-sessions/{id}/...
+  // endpoints reject the per-session key with
+  // "This endpoint requires a valid personal access token."
+  wasender_personal_token: string;
   // Required by the inbox view (message-logs API takes a session id in
   // its path). Sending works without it; chats list + history don't.
   wasender_session_id: string;
@@ -623,7 +628,7 @@ function EscalationConfigCard() {
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  WhatsApp API key
+                  WhatsApp API key (per-session)
                 </Label>
                 <Input
                   type="password"
@@ -633,12 +638,30 @@ function EscalationConfigCard() {
                   autoComplete="new-password"
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  Required for sending. The WhatsApp page pings <code
-                  className="mx-1 rounded bg-muted px-1">/whatsapp/status</code>
-                  on mount to confirm it's accepted.
+                  WasenderApi dashboard → your paired number → "API Key".
+                  Authorises sending messages and listing contacts.
                 </p>
               </div>
               <div className="space-y-1.5">
+                <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  WhatsApp Personal Access Token
+                </Label>
+                <Input
+                  type="password"
+                  value={draft.wasender_personal_token}
+                  onChange={(e) => setDraft({ ...draft, wasender_personal_token: e.target.value })}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  WasenderApi → Settings → Personal Access Tokens.
+                  REQUIRED for the inbox view — without it,
+                  <code className="mx-1 rounded bg-muted px-1">/whatsapp-sessions/&#123;id&#125;/...</code>
+                  returns "This endpoint requires a valid personal access
+                  token."
+                </p>
+              </div>
+              <div className="space-y-1.5 md:col-span-2">
                 <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   WhatsApp session ID
                 </Label>
@@ -649,9 +672,9 @@ function EscalationConfigCard() {
                   autoComplete="off"
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  Required for the inbox view (chat list + message history).
-                  Find it on the WasenderApi dashboard under your paired
-                  WhatsApp number. Sending works without it.
+                  Required by the inbox: the message-logs API takes a session id
+                  in its path. Find it on the WasenderApi dashboard under your
+                  paired WhatsApp number. Sending works without it.
                 </p>
               </div>
             </div>

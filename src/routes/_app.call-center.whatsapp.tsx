@@ -2,11 +2,15 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MessageCircle, Send, AlertTriangle, CheckCircle2, RefreshCw,
-  Loader2, Settings, Inbox, Users,
+  Loader2, Settings, Inbox, Users, MessageSquarePlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter,
+  DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import { useApp } from "@/lib/i18n";
 
 export const Route = createFileRoute("/_app/call-center/whatsapp")({
@@ -68,6 +72,13 @@ function WhatsAppPage() {
   // Send form (right pane footer)
   const [draft, setDraft]   = useState("");
   const [send, setSend]     = useState<SendState>({ kind: "idle" });
+
+  // Compose dialog — send a new message to an arbitrary phone number
+  // (someone the operator has never chatted with on this number).
+  const [composeOpen,  setComposeOpen]  = useState(false);
+  const [composePhone, setComposePhone] = useState("");
+  const [composeText,  setComposeText]  = useState("");
+  const [composeState, setComposeState] = useState<SendState>({ kind: "idle" });
 
   // ---------- API calls ------------------------------------------------
 
@@ -191,6 +202,43 @@ function WhatsAppPage() {
     }
   };
 
+  // Compose-new-message submit: same backend endpoint as the inline
+  // send form (POST /whatsapp/send), just with an arbitrary phone
+  // number instead of a JID. The backend's normalize_phone handles
+  // "+9665…" / "9665…" / "05…" — we don't need to do any client-side
+  // formatting here.
+  const onComposeSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (composeState.kind === "sending") return;
+    if (!composePhone.trim() || !composeText.trim()) return;
+    setComposeState({ kind: "sending" });
+    try {
+      const r = await fetch("/api/demo/clinic/whatsapp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: composePhone.trim(), text: composeText }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok && data?.ok) {
+        setComposeState({ kind: "idle" });
+        setComposeOpen(false);
+        setComposePhone("");
+        setComposeText("");
+        // Refresh chats so the new conversation appears in the left
+        // pane on the next tick (WasenderApi indexes the message-log
+        // first, then it shows up in our grouped view).
+        setTimeout(() => { loadChats(); }, 1500);
+      } else {
+        setComposeState({
+          kind: "failed",
+          error: data?.error || data?.detail || `HTTP ${r.status}`,
+        });
+      }
+    } catch (e: any) {
+      setComposeState({ kind: "failed", error: e?.message || "network error" });
+    }
+  };
+
   // Derived: the currently selected chat object, for the header.
   const selectedChat = useMemo(
     () => chats.find((c) => c.jid === selectedJid) ?? null,
@@ -215,6 +263,15 @@ function WhatsAppPage() {
         </div>
         <div className="flex items-center gap-2">
           <StatusPill status={status} />
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() => { setComposeState({ kind: "idle" }); setComposeOpen(true); }}
+            disabled={status.kind !== "ok"}
+          >
+            <MessageSquarePlus className="me-1.5 h-3.5 w-3.5" />
+            New message
+          </Button>
           <Button variant="outline" size="sm" onClick={() => { loadStatus(); loadChats(); if (selectedJid) loadMessages(selectedJid); }}>
             <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${status.kind === "loading" || chatsLoading || msgsLoading ? "animate-spin" : ""}`} />
             Refresh
@@ -380,6 +437,77 @@ function WhatsAppPage() {
           )}
         </div>
       </div>
+
+      {/* Compose-new-message dialog. Sends to an arbitrary phone the
+       *  operator has never chatted with on this WhatsApp number —
+       *  the inline send form below an open chat only handles replies. */}
+      <Dialog open={composeOpen} onOpenChange={(o) => { if (!o) setComposeOpen(false); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>New WhatsApp message</DialogTitle>
+            <DialogDescription>
+              Send a text to any phone number. The number must already have
+              WhatsApp; we don't pre-validate.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={onComposeSend} className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Recipient phone
+              </label>
+              <Input
+                value={composePhone}
+                onChange={(e) => setComposePhone(e.target.value)}
+                placeholder="+966 50 123 4567"
+                inputMode="tel"
+                autoFocus
+              />
+              <p className="text-[10px] text-muted-foreground">
+                Saudi formats accepted: <code className="rounded bg-muted px-1">+9665…</code>,
+                <code className="mx-1 rounded bg-muted px-1">9665…</code>,
+                <code className="rounded bg-muted px-1">05…</code>.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Message
+              </label>
+              <Textarea
+                value={composeText}
+                onChange={(e) => setComposeText(e.target.value)}
+                rows={4}
+                placeholder="Type your message…"
+                dir="auto"
+              />
+            </div>
+            {composeState.kind === "failed" && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                <AlertTriangle className="me-1 inline h-3 w-3" />
+                {composeState.error}
+              </div>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setComposeOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  composeState.kind === "sending"
+                  || !composePhone.trim()
+                  || !composeText.trim()
+                }
+              >
+                {composeState.kind === "sending"
+                  ? <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />
+                  : <Send className="me-1.5 h-3.5 w-3.5" />
+                }
+                Send
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -482,6 +610,34 @@ function ErrorHint({ message }: { message: string }) {
 }
 
 function InlineError({ message }: { message: string }) {
+  // The "personal access token" failure is the most common WasenderApi
+  // gotcha — the per-session API key authorises send-message but not
+  // /whatsapp-sessions/{id}/message-logs. Surface a friendlier hint
+  // with a one-click jump to Configuration instead of just dumping the
+  // raw error.
+  const needsPat = /personal access token/i.test(message);
+  if (needsPat) {
+    return (
+      <div className="space-y-1.5 px-4 py-3 text-xs text-amber-700 dark:text-amber-300">
+        <div className="flex items-start gap-2 font-medium">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>Inbox needs a Personal Access Token</span>
+        </div>
+        <p className="ms-5 text-muted-foreground">
+          WasenderApi's <code className="mx-0.5 rounded bg-muted px-1">/whatsapp-sessions/&#123;id&#125;/message-logs</code>
+          endpoint won't accept the per-session API key. Open{" "}
+          <Link to="/call-center/configuration" className="text-primary underline-offset-4 hover:underline">
+            Configuration
+          </Link>{" "}
+          and paste your Personal Access Token (Settings → Personal Access
+          Tokens on the WasenderApi dashboard).
+        </p>
+        <p className="ms-5 break-all font-mono text-[10px] text-muted-foreground">
+          Raw: {message}
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="flex items-start gap-2 px-4 py-3 text-xs text-destructive">
       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
