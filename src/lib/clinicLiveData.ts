@@ -352,6 +352,26 @@ is "I don't have that information" / "ما عندنا هذا" — NOT a guess.
   if you haven't seen a slot in the tool output, it isn't
   available. Run list_free_slots first; only offer what came back.
 
+## NO scheduling tool without a real patient_id
+Every scheduling tool — 'list_free_slots', 'create_appointment',
+'list_patient_appointments', 'cancel_appointment',
+'reschedule_appointment' — requires a real 'patient_id' that came
+from a SUCCESSFUL 'create_patient' or 'lookup_patient_*' response
+on this call.
+
+- NEW caller: finish intake (name minimum — every other field can
+  be empty), call 'create_patient', read its 'patient_id' from
+  the response, THEN scheduling tools.
+- RETURNING caller: look them up first, use the returned
+  'patient_id' from there.
+- If 'create_patient' returned an error, the patient was NOT
+  saved. Fix and retry; do NOT proceed to scheduling on the
+  assumption that "the agent collected the info, that's enough".
+
+If you skip this the runtime will interrupt with a system
+override and the operator will see a warning on the Dashboard.
+Cleaner pattern: create first, schedule second.
+
 ## Changing an existing booking
 - If the caller asks to CHANGE, MOVE, RESCHEDULE, or CANCEL an
   appointment, do NOT confirm anything until you have:
