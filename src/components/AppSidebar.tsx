@@ -17,6 +17,7 @@ import {
   LogOut,
   ChevronRight,
   MessageCircle,
+  FileText,
 } from "lucide-react";
 import {
   Sidebar,
@@ -75,6 +76,7 @@ export function AppSidebar() {
       children: [
         { kind: "leaf", key: "ccDashboard",   title: t("dashboard"),     url: "/call-center/dashboard",      icon: LayoutDashboard },
         { kind: "leaf", key: "ccWhatsApp",    title: t("whatsapp"),      url: "/call-center/whatsapp",       icon: MessageCircle },
+        { kind: "leaf", key: "ccWhatsAppTpl", title: t("whatsappTemplates" as never), url: "/call-center/whatsapp-templates", icon: FileText },
         { kind: "leaf", key: "ccHistory",     title: t("history"),       url: "/call-center/history",        icon: HistoryIcon },
         { kind: "leaf", key: "knowledgeBase", title: t("knowledgeBase"), url: "/call-center/knowledge-base", icon: BookOpen },
         { kind: "leaf", key: "persona",       title: t("persona"),       url: "/call-center/persona",        icon: UserCircle2 },

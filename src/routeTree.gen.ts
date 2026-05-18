@@ -20,6 +20,7 @@ import { Route as AppClinicsRouteImport } from './routes/_app.clinics'
 import { Route as AppCallCenterRouteImport } from './routes/_app.call-center'
 import { Route as AppCalendarRouteImport } from './routes/_app.calendar'
 import { Route as AppAppointmentsRouteImport } from './routes/_app.appointments'
+import { Route as AppCallCenterWhatsappTemplatesRouteImport } from './routes/_app.call-center.whatsapp-templates'
 import { Route as AppCallCenterWhatsappRouteImport } from './routes/_app.call-center.whatsapp'
 import { Route as AppCallCenterPersonaRouteImport } from './routes/_app.call-center.persona'
 import { Route as AppCallCenterKnowledgeBaseRouteImport } from './routes/_app.call-center.knowledge-base'
@@ -81,6 +82,12 @@ const AppAppointmentsRoute = AppAppointmentsRouteImport.update({
   path: '/appointments',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCallCenterWhatsappTemplatesRoute =
+  AppCallCenterWhatsappTemplatesRouteImport.update({
+    id: '/whatsapp-templates',
+    path: '/whatsapp-templates',
+    getParentRoute: () => AppCallCenterRoute,
+  } as any)
 const AppCallCenterWhatsappRoute = AppCallCenterWhatsappRouteImport.update({
   id: '/whatsapp',
   path: '/whatsapp',
@@ -131,6 +138,7 @@ export interface FileRoutesByFullPath {
   '/call-center/knowledge-base': typeof AppCallCenterKnowledgeBaseRoute
   '/call-center/persona': typeof AppCallCenterPersonaRoute
   '/call-center/whatsapp': typeof AppCallCenterWhatsappRoute
+  '/call-center/whatsapp-templates': typeof AppCallCenterWhatsappTemplatesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -149,6 +157,7 @@ export interface FileRoutesByTo {
   '/call-center/knowledge-base': typeof AppCallCenterKnowledgeBaseRoute
   '/call-center/persona': typeof AppCallCenterPersonaRoute
   '/call-center/whatsapp': typeof AppCallCenterWhatsappRoute
+  '/call-center/whatsapp-templates': typeof AppCallCenterWhatsappTemplatesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -169,6 +178,7 @@ export interface FileRoutesById {
   '/_app/call-center/knowledge-base': typeof AppCallCenterKnowledgeBaseRoute
   '/_app/call-center/persona': typeof AppCallCenterPersonaRoute
   '/_app/call-center/whatsapp': typeof AppCallCenterWhatsappRoute
+  '/_app/call-center/whatsapp-templates': typeof AppCallCenterWhatsappTemplatesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -189,6 +199,7 @@ export interface FileRouteTypes {
     | '/call-center/knowledge-base'
     | '/call-center/persona'
     | '/call-center/whatsapp'
+    | '/call-center/whatsapp-templates'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -207,6 +218,7 @@ export interface FileRouteTypes {
     | '/call-center/knowledge-base'
     | '/call-center/persona'
     | '/call-center/whatsapp'
+    | '/call-center/whatsapp-templates'
   id:
     | '__root__'
     | '/'
@@ -226,6 +238,7 @@ export interface FileRouteTypes {
     | '/_app/call-center/knowledge-base'
     | '/_app/call-center/persona'
     | '/_app/call-center/whatsapp'
+    | '/_app/call-center/whatsapp-templates'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -313,6 +326,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAppointmentsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/call-center/whatsapp-templates': {
+      id: '/_app/call-center/whatsapp-templates'
+      path: '/whatsapp-templates'
+      fullPath: '/call-center/whatsapp-templates'
+      preLoaderRoute: typeof AppCallCenterWhatsappTemplatesRouteImport
+      parentRoute: typeof AppCallCenterRoute
+    }
     '/_app/call-center/whatsapp': {
       id: '/_app/call-center/whatsapp'
       path: '/whatsapp'
@@ -365,6 +385,7 @@ interface AppCallCenterRouteChildren {
   AppCallCenterKnowledgeBaseRoute: typeof AppCallCenterKnowledgeBaseRoute
   AppCallCenterPersonaRoute: typeof AppCallCenterPersonaRoute
   AppCallCenterWhatsappRoute: typeof AppCallCenterWhatsappRoute
+  AppCallCenterWhatsappTemplatesRoute: typeof AppCallCenterWhatsappTemplatesRoute
 }
 
 const AppCallCenterRouteChildren: AppCallCenterRouteChildren = {
@@ -374,6 +395,7 @@ const AppCallCenterRouteChildren: AppCallCenterRouteChildren = {
   AppCallCenterKnowledgeBaseRoute: AppCallCenterKnowledgeBaseRoute,
   AppCallCenterPersonaRoute: AppCallCenterPersonaRoute,
   AppCallCenterWhatsappRoute: AppCallCenterWhatsappRoute,
+  AppCallCenterWhatsappTemplatesRoute: AppCallCenterWhatsappTemplatesRoute,
 }
 
 const AppCallCenterRouteWithChildren = AppCallCenterRoute._addFileChildren(
