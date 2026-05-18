@@ -32,6 +32,14 @@ type StatusState =
 type Chat = {
   jid:           string;
   name:          string;
+  /** Push-name from Wasender's contacts list (e.g. "Ahmed", "خالد البندر").
+   *  Used for chats whose `jid` is an opaque LID — far friendlier than
+   *  showing 15 raw digits. May also be set for phone-JID chats when
+   *  the contact has a saved name. */
+  display_name:  string | null;
+  /** True when the JID ends in `@lid` — WhatsApp privacy ID, no phone
+   *  exposed. We can't patient-link and can't reply to these chats. */
+  is_lid:        boolean;
   last_text:     string;
   last_ts:       number;          // unix seconds
   last_from_me:  boolean;
@@ -340,10 +348,13 @@ function WhatsAppPage() {
           ) : (
             <ul className="max-h-[70vh] divide-y divide-border overflow-y-auto">
               {chats.map((c) => {
-                const linked = lookupPatient(c.jid);
+                // LID chats have no phone, so patient-link can't match
+                // and we don't even attempt it. Display order: linked
+                // patient name → Wasender push name → bare JID/digits.
+                const linked = c.is_lid ? null : lookupPatient(c.jid);
                 const displayName = linked
                   ? (lang === "ar" ? (linked.name_ar || linked.name) : linked.name)
-                  : c.name;
+                  : (c.display_name || c.name);
                 return (
                   <li key={c.jid}>
                     <button
@@ -362,6 +373,14 @@ function WhatsAppPage() {
                           {linked && (
                             <span className="ms-1 shrink-0 rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-emerald-700 dark:text-emerald-400">
                               {linked.file_number}
+                            </span>
+                          )}
+                          {c.is_lid && (
+                            <span
+                              className="ms-1 shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-semibold text-amber-700 dark:text-amber-400"
+                              title="WhatsApp privacy ID — no phone exposed. We can't reply or link this chat to a patient record."
+                            >
+                              LID · read-only
                             </span>
                           )}
                         </span>
@@ -399,10 +418,11 @@ function WhatsAppPage() {
               <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
                 <div className="min-w-0">
                   {(() => {
-                    const linkedHeader = lookupPatient(selectedJid);
+                    // LID chats can't be patient-linked (no phone exposed).
+                    const linkedHeader = selectedChat?.is_lid ? null : lookupPatient(selectedJid);
                     const displayName = linkedHeader
                       ? (lang === "ar" ? (linkedHeader.name_ar || linkedHeader.name) : linkedHeader.name)
-                      : (selectedChat?.name ?? selectedJid.split("@")[0]);
+                      : (selectedChat?.display_name || selectedChat?.name || selectedJid.split("@")[0]);
                     return (
                       <>
                         <div className="flex items-center gap-1.5 truncate text-sm font-semibold text-card-foreground" dir="auto">
@@ -416,6 +436,14 @@ function WhatsAppPage() {
                             >
                               {linkedHeader.file_number}
                             </Link>
+                          )}
+                          {selectedChat?.is_lid && (
+                            <span
+                              className="ms-1 shrink-0 rounded bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-amber-700 dark:text-amber-400"
+                              title="WhatsApp privacy ID — no phone exposed. Replies via Wasender are blocked."
+                            >
+                              LID · read-only
+                            </span>
                           )}
                         </div>
                         <div className="truncate font-mono text-[10px] text-muted-foreground" dir="ltr">
@@ -468,6 +496,16 @@ function WhatsAppPage() {
               </div>
 
               <form onSubmit={onSend} className="border-t border-border bg-card p-3">
+                {selectedChat?.is_lid && (
+                  <div className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+                    <AlertTriangle className="me-1 inline h-3 w-3" />
+                    This chat uses a WhatsApp <strong>privacy ID</strong>
+                    {" "}(LID). The sender hasn't exposed their phone, so the
+                    Wasender send-message API rejects replies here. You can
+                    still read the conversation — ask them to share their
+                    phone in-band if you need to respond.
+                  </div>
+                )}
                 <div className="flex items-end gap-2">
                   <Textarea
                     value={draft}
@@ -480,13 +518,20 @@ function WhatsAppPage() {
                       }
                     }}
                     rows={2}
-                    placeholder={selectedChat?.is_group ? "Send to group…" : "Type a message…"}
+                    placeholder={
+                      selectedChat?.is_lid
+                        ? "Reply disabled — WhatsApp privacy ID, no phone exposed"
+                        : selectedChat?.is_group
+                          ? "Send to group…"
+                          : "Type a message…"
+                    }
+                    disabled={selectedChat?.is_lid}
                     className="min-h-[56px] resize-y"
                     dir="auto"
                   />
                   <Button
                     type="submit"
-                    disabled={send.kind === "sending" || !draft.trim()}
+                    disabled={selectedChat?.is_lid || send.kind === "sending" || !draft.trim()}
                     className="self-stretch"
                   >
                     {send.kind === "sending"
