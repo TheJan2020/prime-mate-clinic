@@ -886,6 +886,7 @@ function DialModeOne({
   let label: string;
   let title: string;
   let busy = false;
+  let stateBg = "bg-background";
   if (state.kind === "calling") {
     label = "…";
     title = `Dialing ${extension} (${mode}) via AMI`;
@@ -893,12 +894,15 @@ function DialModeOne({
   } else if (state.kind === "ringing") {
     label = meta.doneMsg;
     title = `Phone is ringing on ext. ${extension} — pick up to ${meta.label.toLowerCase()}`;
+    stateBg = "bg-emerald-500/15";
   } else if (state.kind === "copied") {
     label = "Copied";
     title = "Extension copied — paste into your softphone";
+    stateBg = "bg-amber-500/10";
   } else if (state.kind === "failed") {
-    label = "Copied";
-    title = `Auto-dial (${mode}) failed: ${state.error}\nExtension copied as fallback. Fix in Configuration → PBX integration.`;
+    label = "Failed";
+    title = `Auto-dial (${mode}) failed:\n${state.error}\n\nExtension copied as fallback. Hover to see full error, or open Call Center → Debug for the full backend log.`;
+    stateBg = "bg-destructive/15 text-destructive";
   } else {
     label = meta.label;
     title = meta.title;
@@ -910,7 +914,7 @@ function DialModeOne({
       type="button"
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       disabled={busy}
-      className={`inline-flex items-center gap-1 bg-background px-2 py-0.5 text-[11px] font-medium disabled:opacity-60 ${baseBg} ${dividerCls}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium disabled:opacity-60 ${stateBg} ${baseBg} ${dividerCls}`}
       title={title}
     >
       <Icon className="h-3 w-3" />
