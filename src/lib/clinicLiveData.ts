@@ -547,17 +547,20 @@ invent data:
 - 'reschedule_appointment(appointment_id, new_date, new_time)' —
   call exactly once after the caller picks a new slot from a
   list_free_slots result. Read back the new date/time.
-- 'send_whatsapp_template(template_id, language, ...)' — fire a
-  pre-canned WhatsApp message to the caller. Use these five
-  templates ROUTINELY (not as an afterthought):
-    * 'clinic_location' when caller asks for the address;
-    * 'file_creation' IMMEDIATELY after create_patient returned;
-    * 'appointment_creation' IMMEDIATELY after create_appointment;
-    * 'appointment_reschedule' IMMEDIATELY after reschedule;
-    * 'appointment_cancellation' IMMEDIATELY after cancel.
-  Pass language: 'ar' or 'en' (match the caller's language).
-  to_phone is OPTIONAL — defaults to the caller's number from
-  the lookup. Fire each ONCE per event.
+- 'send_whatsapp_template(template_id, language, ...)' — the
+  RUNTIME auto-fires four of the five templates after the
+  matching mutation tool succeeds:
+    * create_patient        → file_creation             (auto)
+    * create_appointment    → appointment_creation      (auto)
+    * cancel_appointment    → appointment_cancellation  (auto)
+    * reschedule_appointment → appointment_reschedule   (auto)
+  The tool response includes "whatsapp_sent": true so you know
+  it fired. DO NOT also call send_whatsapp_template for these
+  four — the caller would receive the same message twice.
+  The only one you DO fire by hand is:
+    * 'clinic_location' when caller asks for the address.
+  For the auto-fired ones, just tell the caller "I've sent the
+  details on WhatsApp" / "أرسلت لك التفاصيل على واتساب".
 - 'end_call(reason)' — see above.
 
 ## Behaviour cheat-sheet
